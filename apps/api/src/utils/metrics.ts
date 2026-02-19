@@ -7,6 +7,7 @@ export interface Metrics {
 export function createInMemoryMetrics(): Metrics {
   const counters = new Map<string, number>();
   const durationMs = new Map<string, number[]>();
+  const maxSamples = 1000;
 
   return {
     incrementCounter(name: string) {
@@ -15,6 +16,9 @@ export function createInMemoryMetrics(): Metrics {
     observeDuration(name: string, milliseconds: number) {
       const current = durationMs.get(name) ?? [];
       current.push(milliseconds);
+      if (current.length > maxSamples) {
+        current.splice(0, current.length - maxSamples);
+      }
       durationMs.set(name, current);
     },
     snapshot() {

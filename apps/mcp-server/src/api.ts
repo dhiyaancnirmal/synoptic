@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { buildPaymentHeader } from "@synoptic/types/payments";
 import type {
   CreateAgentResponse,
+  GetAgentResponse,
   GetOrderResponse,
+  HealthResponse,
   ListAgentsResponse,
   ListEventsResponse,
   MarketExecuteRequest,
@@ -36,6 +39,26 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function getPaymentMode(): Promise<"mock" | "http"> {
+  try {
+    const health = await apiRequest<HealthResponse>("/health");
+    return health.dependencies?.paymentProviderMode ?? "mock";
+  } catch {
+    return "mock";
+  }
+}
+
+function buildPaymentHeaderForMode(mode: "mock" | "http", payer: string): string {
+  return buildPaymentHeader({
+    paymentId: randomUUID(),
+    signature: mode === "mock" ? `sig_${randomUUID()}` : `http_sig_${randomUUID()}`,
+    amount: process.env.X402_PRICE_USD ?? "0.10",
+    asset: process.env.SETTLEMENT_TOKEN_ADDRESS ?? "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
+    network: process.env.KITE_CHAIN_ID ?? "2368",
+    payer
+  });
+}
+
 export async function createAgent(ownerAddress: string): Promise<CreateAgentResponse> {
   return apiRequest<CreateAgentResponse>("/agents", {
     method: "POST",
@@ -47,8 +70,15 @@ export async function listAgents(): Promise<ListAgentsResponse> {
   return apiRequest<ListAgentsResponse>("/agents");
 }
 
+export async function setAgentStatus(agentId: string, status: "ACTIVE" | "PAUSED" | "STOPPED"): Promise<GetAgentResponse> {
+  return apiRequest<GetAgentResponse>(`/agents/${encodeURIComponent(agentId)}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status })
+  });
+}
+
 export async function quoteMarket(input: MarketQuoteRequest): Promise<MarketQuoteResponse> {
-  const paymentHeader = buildMockPaymentHeader();
+  const paymentHeader = buildPaymentHeaderForMode(await getPaymentMode(), "mcp-server");
 
   return apiRequest<MarketQuoteResponse>("/markets/quote", {
     method: "POST",
@@ -60,7 +90,7 @@ export async function quoteMarket(input: MarketQuoteRequest): Promise<MarketQuot
 }
 
 export async function executeMarket(input: MarketExecuteRequest): Promise<MarketExecuteResponse> {
-  const paymentHeader = buildMockPaymentHeader();
+  const paymentHeader = buildPaymentHeaderForMode(await getPaymentMode(), "mcp-server");
 
   return apiRequest<MarketExecuteResponse>("/markets/execute", {
     method: "POST",
@@ -89,17 +119,4 @@ export async function searchShopifyCatalog(input: ShopifyCatalogSearchRequest): 
 
 export async function getShopifyProductDetails(upid: string): Promise<ShopifyProductDetailsResponse> {
   return apiRequest<ShopifyProductDetailsResponse>(`/shopify/catalog/product/${encodeURIComponent(upid)}`);
-}
-
-function buildMockPaymentHeader(): string {
-  const payload = {
-    paymentId: randomUUID(),
-    signature: `sig_${randomUUID()}`,
-    amount: process.env.X402_PRICE_USD ?? "0.10",
-    asset: process.env.SETTLEMENT_TOKEN_ADDRESS ?? "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
-    network: process.env.KITE_CHAIN_ID ?? "2368",
-    payer: "mcp-server"
-  };
-
-  return Buffer.from(JSON.stringify(payload), "utf-8").toString("base64url");
 }

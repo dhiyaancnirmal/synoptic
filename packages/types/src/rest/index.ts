@@ -11,6 +11,7 @@ export interface HealthResponse {
     database: "up" | "down";
     paymentProviderMode: "mock" | "http";
     facilitatorMode?: "mock" | "http";
+    authMode?: "siwe" | "dev";
   };
 }
 
@@ -66,6 +67,7 @@ export interface CreateAgentResponse {
 
 export interface ListAgentsResponse {
   agents: AgentRecord[];
+  nextCursor?: string;
 }
 
 export interface GetAgentResponse {
@@ -116,6 +118,7 @@ export interface GetOrderResponse {
 
 export interface ListEventsResponse {
   events: SynopticEventEnvelope[];
+  nextCursor?: string;
 }
 
 export interface X402ChallengeResponse {

@@ -20,8 +20,9 @@ export function registerHealthRoute(app: Express, context: ApiContext): void {
       timestamp: new Date().toISOString(),
       dependencies: {
         database,
-        paymentProviderMode: context.config.FACILITATOR_URL.startsWith("mock://") ? "mock" : "http",
-        facilitatorMode: context.config.FACILITATOR_URL.startsWith("mock://") ? "mock" : "http"
+        paymentProviderMode: context.config.PAYMENT_MODE,
+        facilitatorMode: context.config.PAYMENT_MODE,
+        authMode: context.config.AUTH_MODE
       }
     });
   });

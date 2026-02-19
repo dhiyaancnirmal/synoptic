@@ -1,5 +1,6 @@
 import compression from "compression";
 import cors from "cors";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import helmet from "helmet";
 import { performance } from "node:perf_hooks";
@@ -16,12 +17,47 @@ import { ApiError, sendApiError } from "./utils/errors.js";
 
 export function createApp(context: ApiContext): Express {
   const app = express();
+  const corsOrigins = parseCorsOrigins(context.config.CORS_ORIGIN);
+
+  const authRateLimit = rateLimit({
+    windowMs: 60_000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false
+  });
+  const generalRateLimit = rateLimit({
+    windowMs: 60_000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false
+  });
+  const marketRateLimit = rateLimit({
+    windowMs: 60_000,
+    max: 30,
+    keyGenerator: (req) => {
+      const auth = req.header("authorization");
+      if (auth?.toLowerCase().startsWith("bearer ")) {
+        return auth.slice(7);
+      }
+      return ipKeyGenerator(req.ip ?? "127.0.0.1");
+    },
+    standardHeaders: true,
+    legacyHeaders: false
+  });
 
   app.use(helmet());
-  app.use(cors());
+  app.use(
+    cors({
+      origin: corsOrigins,
+      credentials: true
+    })
+  );
   app.use(compression());
   app.use(express.json({ limit: "1mb" }));
   app.use(requestIdMiddleware);
+  app.use(generalRateLimit);
+  app.use("/auth", authRateLimit);
+  app.use("/markets", marketRateLimit);
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const start = performance.now();
@@ -54,6 +90,10 @@ export function createApp(context: ApiContext): Express {
   registerEventsRoutes(app, context);
   registerShopifyRoutes(app, context);
 
+  app.get("/metrics", (_req, res) => {
+    res.json(context.metrics.snapshot());
+  });
+
   app.get("/", (_req, res) => {
     res.json({ service: "synoptic-api", status: "ready" });
   });
@@ -71,4 +111,11 @@ export function createApp(context: ApiContext): Express {
   });
 
   return app;
+}
+
+function parseCorsOrigins(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
 }

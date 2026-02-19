@@ -34,16 +34,21 @@ if (!hasDatabase) {
   const baseConfig: ApiConfig = {
     NODE_ENV: "test",
     PORT: 3001,
+    AUTH_MODE: "dev",
+    CORS_ORIGIN: "http://localhost:3000",
     DATABASE_URL: databaseUrl as string,
     KITE_RPC_URL: "https://rpc-testnet.gokite.ai/",
     KITE_CHAIN_ID: 2368,
     SETTLEMENT_TOKEN_ADDRESS: "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
     JWT_SECRET: "integration-secret-12345",
+    SHOPIFY_TIMEOUT_MS: 5000,
+    PAYMENT_MODE: "mock",
     FACILITATOR_URL: "mock://facilitator",
     FACILITATOR_TIMEOUT_MS: 100,
     PAYMENT_RETRY_ATTEMPTS: 2,
     X402_PAY_TO: "synoptic-facilitator",
-    X402_PRICE_USD: "0.10"
+    X402_PRICE_USD: "0.10",
+    PRICE_SOURCE: "deterministic"
   };
 
   const app = createApp({
@@ -53,7 +58,8 @@ if (!hasDatabase) {
     logger: createLogger("silent"),
     metrics: createInMemoryMetrics(),
     paymentService: createPaymentService({
-      facilitatorUrl: baseConfig.FACILITATOR_URL,
+      mode: baseConfig.PAYMENT_MODE,
+      facilitatorUrl: baseConfig.FACILITATOR_URL ?? "mock://facilitator",
       network: String(baseConfig.KITE_CHAIN_ID),
       asset: baseConfig.SETTLEMENT_TOKEN_ADDRESS,
       amount: baseConfig.X402_PRICE_USD,
@@ -74,6 +80,7 @@ if (!hasDatabase) {
     logger: createLogger("silent"),
     metrics: createInMemoryMetrics(),
     paymentService: createPaymentService({
+      mode: "http",
       facilitatorUrl: "http://127.0.0.1:9",
       network: String(baseConfig.KITE_CHAIN_ID),
       asset: baseConfig.SETTLEMENT_TOKEN_ADDRESS,
@@ -107,12 +114,12 @@ if (!hasDatabase) {
   }
 
   async function resetDb(): Promise<void> {
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE "Event", "Order", "Settlement", "IdempotencyKey", "Agent" RESTART IDENTITY CASCADE;');
+    await prisma.$executeRawUnsafe('TRUNCATE TABLE "Event", "Order", "Settlement", "IdempotencyKey", "RiskRule", "Agent" RESTART IDENTITY CASCADE;');
   }
 
   before(async () => {
     execSync("pnpm --filter @synoptic/api prisma:migrate:deploy", {
-      cwd: "/Users/dhiyaan/Code/synoptic",
+      cwd: process.cwd(),
       env: {
         ...process.env,
         DATABASE_URL: databaseUrl

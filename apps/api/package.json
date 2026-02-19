@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "tsx src/scripts/check-db.ts",
     "dev": "tsx watch --env-file=.env.local src/index.ts",
+    "dev:setup": "pnpm prisma:migrate:deploy && pnpm prisma:seed",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
@@ -24,10 +26,13 @@
     "compression": "1.8.1",
     "cors": "2.8.6",
     "express": "5.2.1",
+    "express-rate-limit": "^8.2.1",
     "helmet": "8.1.0",
     "jsonwebtoken": "^9.0.3",
     "pino": "^10.3.1",
+    "siwe": "^3.0.0",
     "socket.io": "4.8.3",
+    "viem": "^2.46.2",
     "zod": "4.3.6"
   },
   "devDependencies": {

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { buildPaymentHeader } from "@synoptic/types/payments";
 import type {
   CreateAgentResponse,
+  HealthResponse,
   ListAgentsResponse,
   ListEventsResponse,
   MarketExecuteRequest,
@@ -33,6 +35,26 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function getPaymentMode(): Promise<"mock" | "http"> {
+  try {
+    const health = await apiRequest<HealthResponse>("/health");
+    return health.dependencies?.paymentProviderMode ?? "mock";
+  } catch {
+    return "mock";
+  }
+}
+
+function buildPaymentHeaderForMode(mode: "mock" | "http", payer: string): string {
+  return buildPaymentHeader({
+    paymentId: randomUUID(),
+    signature: mode === "mock" ? `sig_${randomUUID()}` : `http_sig_${randomUUID()}`,
+    amount: process.env.X402_PRICE_USD ?? "0.10",
+    asset: process.env.SETTLEMENT_TOKEN_ADDRESS ?? "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
+    network: process.env.KITE_CHAIN_ID ?? "2368",
+    payer
+  });
+}
+
 export async function createAgent(ownerAddress: string): Promise<CreateAgentResponse> {
   return apiRequest<CreateAgentResponse>("/agents", {
     method: "POST",
@@ -60,6 +82,7 @@ export interface StrategyExecutionResult {
 
 export async function executeStrategyOnce(input: StrategyExecutionRequest): Promise<StrategyExecutionResult> {
   const orderInput = mapStrategyToOrderInput(input.strategy);
+  const paymentMode = await getPaymentMode();
 
   const quoteRequest: MarketQuoteRequest = {
     agentId: input.agentId,
@@ -69,7 +92,7 @@ export async function executeStrategyOnce(input: StrategyExecutionRequest): Prom
   const quote = await apiRequest<MarketQuoteResponse>("/markets/quote", {
     method: "POST",
     headers: {
-      "x-payment": buildMockPaymentHeader()
+      "x-payment": buildPaymentHeaderForMode(paymentMode, "synoptic-cli")
     },
     body: JSON.stringify(quoteRequest)
   });
@@ -83,7 +106,7 @@ export async function executeStrategyOnce(input: StrategyExecutionRequest): Prom
   const execution = await apiRequest<MarketExecuteResponse>("/markets/execute", {
     method: "POST",
     headers: {
-      "x-payment": buildMockPaymentHeader(),
+      "x-payment": buildPaymentHeaderForMode(paymentMode, "synoptic-cli"),
       "idempotency-key": randomUUID()
     },
     body: JSON.stringify(executeRequest)
@@ -103,17 +126,4 @@ function mapStrategyToOrderInput(strategy: string): Omit<MarketQuoteRequest, "ag
     default:
       return { venueType: "SPOT", marketId: "ETH-USD", side: "BUY", size: "1" };
   }
-}
-
-function buildMockPaymentHeader(): string {
-  const payload = {
-    paymentId: randomUUID(),
-    signature: `sig_${randomUUID()}`,
-    amount: process.env.X402_PRICE_USD ?? "0.10",
-    asset: process.env.SETTLEMENT_TOKEN_ADDRESS ?? "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
-    network: process.env.KITE_CHAIN_ID ?? "2368",
-    payer: "synoptic-cli"
-  };
-
-  return Buffer.from(JSON.stringify(payload), "utf-8").toString("base64url");
 }

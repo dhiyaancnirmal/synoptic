@@ -145,6 +145,11 @@ export async function ensureDashboardToken(): Promise<string> {
     );
   }
 
+  const health = await fetchHealth();
+  if (health.dependencies?.authMode !== "dev") {
+    throw new DashboardApiError("Dashboard bootstrap token flow is disabled when AUTH_MODE is not dev.", 401);
+  }
+
   const verify = await apiRequest<SiweVerifyResponse>("/auth/siwe/verify", {
     method: "POST",
     body: JSON.stringify({

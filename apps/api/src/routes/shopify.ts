@@ -37,8 +37,21 @@ export function registerShopifyRoutes(app: Express, context: ApiContext): void {
         return;
       }
 
-      const data = await context.shopifyCatalogService.searchCatalog(parsed.data as Record<string, unknown>);
-      res.json({ data });
+      try {
+        const data = await context.shopifyCatalogService.searchCatalog(parsed.data as Record<string, unknown>);
+        res.json({ data });
+      } catch (error) {
+        sendApiError(
+          res,
+          error instanceof ApiError
+            ? error
+            : new ApiError("INTERNAL_ERROR", 502, "Shopify catalog search failed", {
+                reason: "SHOPIFY_CATALOG_SEARCH_FAILED",
+                retryable: true
+              }),
+          req.requestId
+        );
+      }
     }
   );
 
@@ -58,8 +71,21 @@ export function registerShopifyRoutes(app: Express, context: ApiContext): void {
         return;
       }
 
-      const data = await context.shopifyCatalogService.getProductDetails(req.params.upid);
-      res.json({ data });
+      try {
+        const data = await context.shopifyCatalogService.getProductDetails(req.params.upid);
+        res.json({ data });
+      } catch (error) {
+        sendApiError(
+          res,
+          error instanceof ApiError
+            ? error
+            : new ApiError("INTERNAL_ERROR", 502, "Shopify product lookup failed", {
+                reason: "SHOPIFY_PRODUCT_DETAILS_FAILED",
+                retryable: true
+              }),
+          req.requestId
+        );
+      }
     }
   );
 }

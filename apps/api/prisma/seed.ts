@@ -26,6 +26,18 @@ async function main(): Promise<void> {
     }
   });
 
+  await prisma.riskRule.upsert({
+    where: { agentId: dashAgent.agentId },
+    update: {},
+    create: {
+      agentId: dashAgent.agentId,
+      perTxLimit: "1000",
+      dailyLimit: "50000",
+      dailySpent: "0",
+      lastResetDate: new Date()
+    }
+  });
+
   await prisma.agent.upsert({
     where: { agentId: "agent-seed-002" },
     update: {},

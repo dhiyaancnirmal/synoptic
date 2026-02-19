@@ -15,7 +15,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.api
     env_file:
-      - ../apps/api/.env.example
+      - ../apps/api/.env
     ports:
       - "3001:3001"
     depends_on:
@@ -25,7 +25,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.mcp
     env_file:
-      - ../apps/mcp-server/.env.example
+      - ../apps/mcp-server/.env
     depends_on:
       - api
 

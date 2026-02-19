@@ -7,6 +7,11 @@ import type { HardhatUserConfig } from "hardhat/config";
 loadEnv();
 
 const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
+const verifyRequested = process.argv.includes("--verify");
+
+if (verifyRequested && !process.env.KITESCAN_API_KEY) {
+  throw new Error("KITESCAN_API_KEY is required when using --verify.");
+}
 
 const config: HardhatUserConfig = {
   solidity: "0.8.28",

@@ -66,6 +66,7 @@ model Agent {
   orders        Order[]
   settlements   Settlement[]
   events        Event[]
+  riskRule      RiskRule?
 }
 
 model Order {
@@ -124,8 +125,22 @@ model IdempotencyKey {
   route        String
   requestHash  String
   responseJson Json
+  expiresAt    DateTime
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
   @@index([route])
+  @@index([expiresAt])
+}
+
+model RiskRule {
+  agentId       String   @id
+  perTxLimit    String
+  dailyLimit    String
+  dailySpent    String   @default("0")
+  lastResetDate DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  agent         Agent    @relation(fields: [agentId], references: [agentId], onDelete: Cascade)
 }

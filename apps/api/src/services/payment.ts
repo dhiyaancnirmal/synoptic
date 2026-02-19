@@ -121,6 +121,7 @@ class HttpPaymentProvider implements PaymentProvider {
 }
 
 export interface PaymentServiceConfig {
+  mode: "mock" | "http";
   facilitatorUrl: string;
   network: string;
   asset: string;
@@ -134,7 +135,7 @@ export interface PaymentServiceConfig {
 }
 
 export function createPaymentService(config: PaymentServiceConfig, provider?: PaymentProvider): PaymentService {
-  const paymentProvider = provider ?? createPaymentProvider(config.facilitatorUrl, config.timeoutMs ?? 3000);
+  const paymentProvider = provider ?? createPaymentProvider(config.mode, config.facilitatorUrl, config.timeoutMs ?? 3000);
   const retries = config.retries ?? 3;
 
   return {
@@ -212,9 +213,13 @@ export function createPaymentService(config: PaymentServiceConfig, provider?: Pa
   };
 }
 
-export function createPaymentProvider(facilitatorUrl: string, timeoutMs: number): PaymentProvider {
-  if (facilitatorUrl.startsWith("mock://")) {
+export function createPaymentProvider(mode: "mock" | "http", facilitatorUrl: string, timeoutMs: number): PaymentProvider {
+  if (mode === "mock") {
     return new MockPaymentProvider();
+  }
+
+  if (!/^https?:\/\//.test(facilitatorUrl)) {
+    throw new Error("FACILITATOR_URL must be an http(s) URL when PAYMENT_MODE=http");
   }
 
   return new HttpPaymentProvider(facilitatorUrl, timeoutMs);

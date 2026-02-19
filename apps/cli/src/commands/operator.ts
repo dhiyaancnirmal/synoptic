@@ -4,10 +4,6 @@ import { createAgent, listAgents, monitorAgent } from "../api.js";
 export function registerOperatorCommands(program: Command): void {
   const operator = program.command("operator").description("Operator command group");
 
-  operator.command("init").description("Initialize operator workspace").action(() => {
-    console.log("operator init: configuration loaded");
-  });
-
   const operatorAgent = operator.command("agent").description("Operator agent management commands");
 
   operatorAgent

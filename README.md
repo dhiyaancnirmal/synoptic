@@ -41,6 +41,7 @@ Copy examples to real env files where needed:
 - `pnpm typecheck` run TypeScript checks
 - `pnpm test` run scaffold tests
 - `pnpm build` build all workspaces
+- `pnpm --filter @synoptic/api dev:setup` apply migrations + seed data for local API
 - `pnpm --filter @synoptic/contracts compile` compile contracts
 - `pnpm --filter @synoptic/api prisma:migrate:deploy` apply API DB migrations
 - `pnpm --filter @synoptic/api test:integration` run API Postgres integration tests
@@ -54,6 +55,8 @@ Copy examples to real env files where needed:
 Note:
 - Payment verification/settlement endpoint is configured as a generic provider URL.
 - Use `PAYMENT_PROVIDER_URL` (preferred) or `FACILITATOR_URL` (backward-compatible alias).
+- `AUTH_MODE=siwe` enforces signature verification; `AUTH_MODE=dev` keeps local bootstrap behavior.
+- `PAYMENT_MODE=mock|http` controls payment provider behavior.
 
 ## Interface Governance
 Interface contracts are frozen by policy in `files/architecture/04_INTERFACE_CONTRACTS.md`.

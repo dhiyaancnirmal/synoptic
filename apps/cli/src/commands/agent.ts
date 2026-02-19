@@ -1,9 +1,12 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { Command } from "commander";
 import { executeStrategyOnce } from "../api.js";
 
 const RUNTIME_DIR = join(process.cwd(), ".synoptic-runtime");
+const execFileAsync = promisify(execFile);
 
 async function runtimeFile(agentId: string): Promise<string> {
   await mkdir(RUNTIME_DIR, { recursive: true });
@@ -101,7 +104,11 @@ export function registerAgentCommands(program: Command): void {
       const state = JSON.parse(stateRaw) as { pid?: number };
       if (state.pid) {
         try {
-          process.kill(state.pid, "SIGTERM");
+          process.kill(state.pid, 0);
+          const { stdout } = await execFileAsync("ps", ["-p", String(state.pid), "-o", "comm="]);
+          if (stdout.toLowerCase().includes("node")) {
+            process.kill(state.pid, "SIGTERM");
+          }
         } catch {
           // process may already be dead
         }

@@ -5,4 +5,6 @@ interface ISynopticRegistry {
     event AgentRegistered(string indexed agentId, address indexed owner);
 
     function registerAgent(string calldata agentId, address owner) external;
+
+    function owners(string calldata agentId) external view returns (address);
 }

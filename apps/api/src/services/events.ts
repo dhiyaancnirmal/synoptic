@@ -13,14 +13,9 @@ const eventNameMap: Record<SynopticEventName, PrismaEventName> = {
   "risk.limit.hit": "RISK_LIMIT_HIT"
 };
 
-const reverseEventNameMap: Record<PrismaEventName, SynopticEventName> = {
-  AGENT_CREATED: "agent.created",
-  X402_CHALLENGE_ISSUED: "x402.challenge.issued",
-  X402_PAYMENT_SETTLED: "x402.payment.settled",
-  TRADE_EXECUTED: "trade.executed",
-  TRADE_REJECTED: "trade.rejected",
-  RISK_LIMIT_HIT: "risk.limit.hit"
-};
+const reverseEventNameMap = Object.fromEntries(
+  Object.entries(eventNameMap).map(([key, value]) => [value, key])
+) as Record<PrismaEventName, SynopticEventName>;
 
 export async function publishEvent(
   context: ApiContext,
@@ -51,7 +46,12 @@ export async function publishEvent(
     }
   });
 
-  context.io.emit(payload.eventName, payload);
+  const ioServer = context.io as unknown as { to?: (room: string) => { emit: (event: string, data: unknown) => void }; emit?: (event: string, data: unknown) => void };
+  if (ioServer.to) {
+    ioServer.to(payload.agentId).emit(payload.eventName, payload);
+  } else {
+    ioServer.emit?.(payload.eventName, payload);
+  }
   return payload;
 }
 

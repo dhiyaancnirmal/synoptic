@@ -59,6 +59,7 @@ test("payment service retries settlement and succeeds", async () => {
 
   const service = createPaymentService(
     {
+      mode: "mock",
       facilitatorUrl: "mock://facilitator",
       network: "2368",
       asset: "0xasset",
@@ -83,6 +84,7 @@ test("payment service retries settlement and succeeds", async () => {
 
 test("payment service rejects invalid signature", async () => {
   const service = createPaymentService({
+    mode: "mock",
     facilitatorUrl: "mock://facilitator",
     network: "2368",
     asset: "0xasset",
@@ -123,6 +125,7 @@ test("payment service maps retryable verify failures to FACILITATOR_UNAVAILABLE"
 
   const service = createPaymentService(
     {
+      mode: "http",
       facilitatorUrl: "http://unreachable.local",
       network: "2368",
       asset: "0xasset",

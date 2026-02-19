@@ -2,20 +2,15 @@ import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import type { OrderRecord, OrderRejectionReason } from "@synoptic/types/orders";
-import type {
-  ApiErrorResponse,
-  MarketExecuteRequest,
-  MarketExecuteResponse,
-  MarketQuoteRequest,
-  MarketQuoteResponse
-} from "@synoptic/types/rest";
+import type { ApiErrorResponse, MarketExecuteRequest, MarketExecuteResponse, MarketQuoteRequest, MarketQuoteResponse } from "@synoptic/types/rest";
+import type { OrderRejectionReason } from "@synoptic/types/orders";
 import type { ApiContext } from "../context.js";
 import { requireAuth } from "../middleware/auth.js";
 import { createX402Middleware } from "../middleware/x402.js";
 import { publishEvent } from "../services/events.js";
-import { buildDeterministicQuote } from "../services/quote.js";
+import { buildQuote } from "../services/quote.js";
 import { ApiError, sendApiError } from "../utils/errors.js";
+import { mapOrder } from "../utils/mappers.js";
 
 const quoteSchema = z.object({
   agentId: z.string().min(1),
@@ -30,36 +25,6 @@ const executeSchema = quoteSchema.extend({
   quoteId: z.string().uuid().optional()
 });
 
-function mapOrder(order: {
-  orderId: string;
-  agentId: string;
-  status: "PENDING" | "EXECUTED" | "REJECTED";
-  venueType: "SPOT" | "PERP" | "PREDICTION";
-  marketId: string;
-  side: "BUY" | "SELL";
-  size: string;
-  limitPrice: string | null;
-  rejectionReason: OrderRejectionReason | null;
-  paymentSettlementId: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}): OrderRecord {
-  return {
-    orderId: order.orderId,
-    agentId: order.agentId,
-    status: order.status,
-    venueType: order.venueType,
-    marketId: order.marketId,
-    side: order.side,
-    size: order.size,
-    limitPrice: order.limitPrice ?? undefined,
-    rejectionReason: order.rejectionReason ?? undefined,
-    paymentSettlementId: order.paymentSettlementId ?? undefined,
-    createdAt: order.createdAt.toISOString(),
-    updatedAt: order.updatedAt.toISOString()
-  };
-}
-
 function requestHash(body: unknown): string {
   return createHash("sha256").update(JSON.stringify(body)).digest("hex");
 }
@@ -71,23 +36,83 @@ async function loadAgentOrFail(context: ApiContext, agentId: string): Promise<vo
   }
 }
 
-function computeRejectionReason(quote: MarketQuoteResponse): OrderRejectionReason | null {
+function startOfUtcDay(date = new Date()): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+async function getRiskRule(context: ApiContext, agentId: string): Promise<{ perTxLimit: number; dailyLimit: number; dailySpent: number }> {
+  const defaultPerTx = 1000;
+  const defaultDaily = 50000;
+
+  const currentDay = startOfUtcDay();
+  const rule = await context.prisma.riskRule.findUnique({ where: { agentId } });
+
+  if (!rule) {
+    return { perTxLimit: defaultPerTx, dailyLimit: defaultDaily, dailySpent: 0 };
+  }
+
+  if (rule.lastResetDate.getTime() < currentDay.getTime()) {
+    await context.prisma.riskRule.update({
+      where: { agentId },
+      data: {
+        dailySpent: "0",
+        lastResetDate: currentDay
+      }
+    });
+
+    return { perTxLimit: Number(rule.perTxLimit), dailyLimit: Number(rule.dailyLimit), dailySpent: 0 };
+  }
+
+  return {
+    perTxLimit: Number(rule.perTxLimit),
+    dailyLimit: Number(rule.dailyLimit),
+    dailySpent: Number(rule.dailySpent)
+  };
+}
+
+async function computeRejectionReason(context: ApiContext, quote: MarketQuoteResponse): Promise<OrderRejectionReason | null> {
   const size = Number(quote.size);
   const notional = Number(quote.notional);
 
-  if (Number.isNaN(size) || size <= 0 || Number.isNaN(notional)) {
+  if (Number.isNaN(size) || size <= 0 || Number.isNaN(notional) || notional <= 0) {
     return "INVALID_REQUEST";
   }
 
-  if (size > 1000) {
+  const rule = await getRiskRule(context, quote.agentId);
+
+  if (size > rule.perTxLimit) {
     return "RISK_LIMIT";
   }
 
-  if (notional > 50000) {
+  if (rule.dailySpent + notional > rule.dailyLimit) {
     return "INSUFFICIENT_FUNDS";
   }
 
   return null;
+}
+
+async function updateDailySpent(context: ApiContext, quote: MarketQuoteResponse): Promise<void> {
+  const notional = Number(quote.notional);
+  if (Number.isNaN(notional) || notional <= 0) {
+    return;
+  }
+
+  const currentDay = startOfUtcDay();
+  const existing = await context.prisma.riskRule.findUnique({ where: { agentId: quote.agentId } });
+  if (!existing) {
+    return;
+  }
+
+  const baseline = existing.lastResetDate.getTime() < currentDay.getTime() ? 0 : Number(existing.dailySpent);
+  const nextSpent = baseline + notional;
+
+  await context.prisma.riskRule.update({
+    where: { agentId: quote.agentId },
+    data: {
+      dailySpent: nextSpent.toFixed(2),
+      lastResetDate: currentDay
+    }
+  });
 }
 
 export function registerMarketsRoutes(app: Express, context: ApiContext): void {
@@ -122,7 +147,7 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
         return;
       }
 
-      const quote = buildDeterministicQuote(parsed.data);
+      const quote = await buildQuote(parsed.data, { source: context.config.PRICE_SOURCE });
       res.json(quote);
     }
   );
@@ -175,8 +200,8 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
         }
       }
 
-      const quote = buildDeterministicQuote(parsed.data);
-      const rejectionReason = computeRejectionReason(quote);
+      const quote = await buildQuote(parsed.data, { source: context.config.PRICE_SOURCE });
+      const rejectionReason = await computeRejectionReason(context, quote);
       const settlement = req.paymentSettlement;
 
       if (!settlement) {
@@ -214,6 +239,7 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
           }
         });
       } else {
+        await updateDailySpent(context, quote);
         await publishEvent(context, {
           eventName: "trade.executed",
           agentId: parsed.data.agentId,
@@ -236,7 +262,8 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
             key: idemKey,
             route: "/markets/execute",
             requestHash: requestHash(req.body),
-            responseJson: response as unknown as Prisma.InputJsonValue
+            responseJson: response as unknown as Prisma.InputJsonValue,
+            expiresAt: new Date(Date.now() + 24 * 60 * 60_000)
           }
         });
       }
@@ -244,5 +271,4 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
       res.json(response);
     }
   );
-
 }

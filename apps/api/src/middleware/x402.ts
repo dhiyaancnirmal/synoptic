@@ -86,6 +86,6 @@ async function issueChallenge(
       }
     });
   } catch {
-    context.logger.warn({ route, agentId, requestId }, "Failed to persist x402 challenge event");
+    context.logger?.warn({ route, agentId, requestId }, "Failed to persist x402 challenge event");
   }
 }
