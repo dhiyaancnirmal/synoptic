@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "M290";
+  src: url("/fonts/M290.ttf") format("truetype");
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --background: #f7f8fa;
+  --foreground: #10182b;
+}
+
+body {
+  background: radial-gradient(circle at 20% 20%, #ffffff 0%, #f7f8fa 55%, #eaf0ff 100%);
+  color: var(--foreground);
+  font-family: "Manrope", system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+}
+
+.logo-font {
+  font-family: "M290", "Manrope", sans-serif;
+}

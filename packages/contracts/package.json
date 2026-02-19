@@ -1,0 +1,26 @@
+{
+  "name": "@synoptic/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "hardhat compile",
+    "compile": "hardhat compile",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "hardhat test",
+    "deploy:testnet": "hardhat run scripts/deploy.ts --network kite_testnet",
+    "clean": "hardhat clean && rm -rf dist"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "3.0.8",
+    "@nomicfoundation/hardhat-toolbox": "5.0.0",
+    "@nomicfoundation/hardhat-verify": "2.0.13",
+    "@openzeppelin/contracts": "5.2.0",
+    "@openzeppelin/contracts-upgradeable": "5.2.0",
+    "dotenv": "16.4.7",
+    "ethers": "6.13.5",
+    "hardhat": "2.22.18",
+    "hardhat-deploy": "0.14.0",
+    "ts-node": "10.9.2"
+  }
+}

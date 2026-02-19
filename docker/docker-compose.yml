@@ -1,0 +1,17 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    env_file:
+      - ../apps/api/.env.example
+    ports:
+      - "3001:3001"
+  mcp-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.mcp
+    env_file:
+      - ../apps/mcp-server/.env.example
+    depends_on:
+      - api

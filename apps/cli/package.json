@@ -1,0 +1,25 @@
+{
+  "name": "@synoptic/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "synoptic": "dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js --help",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node -e \"console.log('cli scaffold test: ok')\"",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@synoptic/types": "workspace:*",
+    "commander": "13.1.0"
+  },
+  "devDependencies": {
+    "tsx": "4.19.2"
+  }
+}

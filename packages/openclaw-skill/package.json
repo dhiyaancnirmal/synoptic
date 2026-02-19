@@ -1,0 +1,13 @@
+{
+  "name": "@synoptic/openclaw-skill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo 'openclaw skill has no build step'",
+    "lint": "echo 'openclaw skill lint placeholder'",
+    "typecheck": "echo 'openclaw skill typecheck placeholder'",
+    "test": "echo 'openclaw skill test placeholder'",
+    "clean": "echo 'openclaw skill clean placeholder'"
+  }
+}
