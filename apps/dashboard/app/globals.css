@@ -170,27 +170,15 @@ body {
 }
 
 .footer-zone {
-  position: relative;
-  overflow: hidden;
   max-width: 1200px;
   margin: 0 auto;
   padding: 2rem 1.25rem 0.4rem;
-  min-height: 700px;
 }
 
 .footer-grid {
-  position: relative;
-  z-index: 2;
   display: grid;
   grid-template-columns: 1fr 1.15fr;
   gap: 1rem;
-}
-
-.footer-terminal-bg {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  opacity: 0.5;
 }
 
 .footer-copy .pixel-text {
@@ -212,8 +200,6 @@ body {
 }
 
 .footer-mark {
-  position: relative;
-  z-index: 2;
   margin-top: 1.6rem;
   display: flex;
   justify-content: space-between;
@@ -256,9 +242,5 @@ body {
   .footer-mark {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .footer-zone {
-    min-height: 560px;
   }
 }
