@@ -16,12 +16,16 @@ export interface DecodedPayment {
 export interface VerifyPaymentResult {
   verified: boolean;
   providerRef?: string;
+  failureReason?: string;
+  retryable?: boolean;
 }
 
 export interface SettlePaymentResult {
   settled: boolean;
   txHash?: string;
   providerRef?: string;
+  failureReason?: string;
+  retryable?: boolean;
 }
 
 export interface PaymentProvider {
@@ -66,34 +70,53 @@ class MockPaymentProvider implements PaymentProvider {
 }
 
 class HttpPaymentProvider implements PaymentProvider {
-  constructor(private readonly facilitatorUrl: string) {}
+  constructor(
+    private readonly facilitatorUrl: string,
+    private readonly timeoutMs: number
+  ) {}
 
   async verify(payment: DecodedPayment, requirement: PaymentRequirement): Promise<VerifyPaymentResult> {
-    const response = await fetch(`${this.facilitatorUrl}/verify`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ payment, requirement })
-    });
+    try {
+      const response = await fetchWithTimeout(`${this.facilitatorUrl}/verify`, this.timeoutMs, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ payment, requirement })
+      });
 
-    if (!response.ok) {
-      return { verified: false };
+      if (!response.ok) {
+        return { verified: false, failureReason: "VERIFY_REJECTED", retryable: response.status >= 500 };
+      }
+
+      return (await response.json()) as VerifyPaymentResult;
+    } catch (error) {
+      return {
+        verified: false,
+        failureReason: isAbortError(error) ? "VERIFY_TIMEOUT" : "VERIFY_NETWORK_ERROR",
+        retryable: true
+      };
     }
-
-    return (await response.json()) as VerifyPaymentResult;
   }
 
   async settle(payment: DecodedPayment, requirement: PaymentRequirement): Promise<SettlePaymentResult> {
-    const response = await fetch(`${this.facilitatorUrl}/settle`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ payment, requirement })
-    });
+    try {
+      const response = await fetchWithTimeout(`${this.facilitatorUrl}/settle`, this.timeoutMs, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ payment, requirement })
+      });
 
-    if (!response.ok) {
-      return { settled: false };
+      if (!response.ok) {
+        return { settled: false, failureReason: "SETTLE_REJECTED", retryable: response.status >= 500 };
+      }
+
+      return (await response.json()) as SettlePaymentResult;
+    } catch (error) {
+      return {
+        settled: false,
+        failureReason: isAbortError(error) ? "SETTLE_TIMEOUT" : "SETTLE_NETWORK_ERROR",
+        retryable: true
+      };
     }
-
-    return (await response.json()) as SettlePaymentResult;
   }
 }
 
@@ -104,10 +127,14 @@ export interface PaymentServiceConfig {
   amount: string;
   payTo: string;
   retries?: number;
+  timeoutMs?: number;
+  metrics?: {
+    incrementCounter(name: string): void;
+  };
 }
 
 export function createPaymentService(config: PaymentServiceConfig, provider?: PaymentProvider): PaymentService {
-  const paymentProvider = provider ?? createPaymentProvider(config.facilitatorUrl);
+  const paymentProvider = provider ?? createPaymentProvider(config.facilitatorUrl, config.timeoutMs ?? 3000);
   const retries = config.retries ?? 3;
 
   return {
@@ -121,11 +148,23 @@ export function createPaymentService(config: PaymentServiceConfig, provider?: Pa
     },
     async processPayment({ xPaymentHeader, requirement, agentId, prisma }) {
       const decoded = decodePaymentHeader(xPaymentHeader);
+      config.metrics?.incrementCounter("payment.verify.attempt");
       const verified = await paymentProvider.verify(decoded, requirement);
 
       if (!verified.verified) {
+        config.metrics?.incrementCounter("payment.verify.failure");
+        if (verified.retryable) {
+          throw new ApiError("FACILITATOR_UNAVAILABLE", 503, "Payment verification unavailable", {
+            paymentId: decoded.paymentId,
+            reason: verified.failureReason ?? "VERIFY_UNAVAILABLE",
+            retryable: true
+          });
+        }
+
         throw new ApiError("INVALID_PAYMENT", 402, "Payment header verification failed", {
-          paymentId: decoded.paymentId
+          paymentId: decoded.paymentId,
+          reason: verified.failureReason ?? "PAYMENT_VERIFICATION_FAILED",
+          retryable: verified.retryable ?? false
         });
       }
 
@@ -133,11 +172,13 @@ export function createPaymentService(config: PaymentServiceConfig, provider?: Pa
       let attempt = 0;
 
       while (attempt < retries) {
+        config.metrics?.incrementCounter("payment.settle.attempt");
         settleResult = await paymentProvider.settle(decoded, requirement);
         if (settleResult.settled) {
           break;
         }
 
+        config.metrics?.incrementCounter("payment.settle.failure");
         attempt += 1;
         if (attempt < retries) {
           await sleep(backoffMs(attempt));
@@ -145,7 +186,10 @@ export function createPaymentService(config: PaymentServiceConfig, provider?: Pa
       }
 
       if (!settleResult?.settled) {
-        throw new ApiError("FACILITATOR_UNAVAILABLE", 503, "Unable to settle payment after retries");
+        throw new ApiError("FACILITATOR_UNAVAILABLE", 503, "Unable to settle payment after retries", {
+          reason: settleResult?.failureReason ?? "SETTLEMENT_FAILED",
+          retryable: settleResult?.retryable ?? true
+        });
       }
 
       const settlementId = randomUUID();
@@ -168,12 +212,12 @@ export function createPaymentService(config: PaymentServiceConfig, provider?: Pa
   };
 }
 
-export function createPaymentProvider(facilitatorUrl: string): PaymentProvider {
+export function createPaymentProvider(facilitatorUrl: string, timeoutMs: number): PaymentProvider {
   if (facilitatorUrl.startsWith("mock://")) {
     return new MockPaymentProvider();
   }
 
-  return new HttpPaymentProvider(facilitatorUrl);
+  return new HttpPaymentProvider(facilitatorUrl, timeoutMs);
 }
 
 function backoffMs(attempt: number): number {
@@ -186,6 +230,23 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+async function fetchWithTimeout(url: string, timeoutMs: number, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }
 
 export function decodePaymentHeader(value: string): DecodedPayment {

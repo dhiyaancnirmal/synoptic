@@ -110,3 +110,45 @@ test("payment service rejects invalid signature", async () => {
     (error: unknown) => error instanceof ApiError && error.code === "INVALID_PAYMENT"
   );
 });
+
+test("payment service maps retryable verify failures to FACILITATOR_UNAVAILABLE", async () => {
+  const provider: PaymentProvider = {
+    async verify() {
+      return { verified: false, failureReason: "VERIFY_TIMEOUT", retryable: true };
+    },
+    async settle() {
+      return { settled: false };
+    }
+  };
+
+  const service = createPaymentService(
+    {
+      facilitatorUrl: "http://unreachable.local",
+      network: "2368",
+      asset: "0xasset",
+      amount: "0.10",
+      payTo: "synoptic",
+      retries: 1
+    },
+    provider
+  );
+
+  const prisma = {
+    settlement: {
+      create: async () => {
+        throw new Error("should not create");
+      }
+    }
+  } as unknown as PrismaClient;
+
+  await assert.rejects(
+    service.processPayment({
+      xPaymentHeader: buildPaymentHeader(),
+      requirement,
+      agentId: "agent-1",
+      prisma,
+      route: "/markets/execute"
+    }),
+    (error: unknown) => error instanceof ApiError && error.code === "FACILITATOR_UNAVAILABLE"
+  );
+});

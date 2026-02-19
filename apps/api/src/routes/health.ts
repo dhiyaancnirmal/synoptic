@@ -5,17 +5,24 @@ import type { ApiContext } from "../context.js";
 export function registerHealthRoute(app: Express, context: ApiContext): void {
   app.get("/health", async (_req: Request, res: Response<HealthResponse>) => {
     let status: HealthResponse["status"] = "ok";
+    let database: "up" | "down" = "up";
 
     try {
       await context.prisma.$queryRaw`SELECT 1`;
     } catch {
       status = "degraded";
+      database = "down";
     }
 
     res.json({
       status,
       service: "api",
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      dependencies: {
+        database,
+        paymentProviderMode: context.config.FACILITATOR_URL.startsWith("mock://") ? "mock" : "http",
+        facilitatorMode: context.config.FACILITATOR_URL.startsWith("mock://") ? "mock" : "http"
+      }
     });
   });
 }

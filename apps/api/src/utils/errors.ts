@@ -4,9 +4,9 @@ import type { ApiErrorCode, ApiErrorResponse } from "@synoptic/types/rest";
 export class ApiError extends Error {
   public readonly code: ApiErrorCode;
   public readonly statusCode: number;
-  public readonly details?: Record<string, unknown>;
+  public readonly details?: ApiErrorResponse["details"];
 
-  constructor(code: ApiErrorCode, statusCode: number, message: string, details?: Record<string, unknown>) {
+  constructor(code: ApiErrorCode, statusCode: number, message: string, details?: ApiErrorResponse["details"]) {
     super(message);
     this.code = code;
     this.statusCode = statusCode;

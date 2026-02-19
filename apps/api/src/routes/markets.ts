@@ -102,7 +102,11 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
     async (req: Request<unknown, MarketQuoteResponse | ApiErrorResponse, MarketQuoteRequest>, res: Response) => {
       const parsed = quoteSchema.safeParse(req.body);
       if (!parsed.success) {
-        sendApiError(res, new ApiError("VALIDATION_ERROR", 400, "Invalid quote request"), req.requestId);
+        sendApiError(
+          res,
+          new ApiError("VALIDATION_ERROR", 400, "Invalid quote request", { reason: "INVALID_QUOTE_REQUEST", retryable: false }),
+          req.requestId
+        );
         return;
       }
 
@@ -130,7 +134,11 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
     async (req: Request<unknown, MarketExecuteResponse | ApiErrorResponse, MarketExecuteRequest>, res: Response) => {
       const parsed = executeSchema.safeParse(req.body);
       if (!parsed.success) {
-        sendApiError(res, new ApiError("VALIDATION_ERROR", 400, "Invalid execute request"), req.requestId);
+        sendApiError(
+          res,
+          new ApiError("VALIDATION_ERROR", 400, "Invalid execute request", { reason: "INVALID_EXECUTE_REQUEST", retryable: false }),
+          req.requestId
+        );
         return;
       }
 
@@ -151,7 +159,14 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
         const existing = await context.prisma.idempotencyKey.findUnique({ where: { key: idemKey } });
         if (existing) {
           if (existing.requestHash !== requestHash(req.body)) {
-            sendApiError(res, new ApiError("VALIDATION_ERROR", 409, "Idempotency key reused with different payload"), req.requestId);
+            sendApiError(
+              res,
+              new ApiError("VALIDATION_ERROR", 409, "Idempotency key reused with different payload", {
+                reason: "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH",
+                retryable: false
+              }),
+              req.requestId
+            );
             return;
           }
 
@@ -165,7 +180,11 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
       const settlement = req.paymentSettlement;
 
       if (!settlement) {
-        sendApiError(res, new ApiError("INVALID_PAYMENT", 402, "Payment settlement missing"), req.requestId);
+        sendApiError(
+          res,
+          new ApiError("INVALID_PAYMENT", 402, "Payment settlement missing", { reason: "MISSING_SETTLEMENT", retryable: false }),
+          req.requestId
+        );
         return;
       }
 

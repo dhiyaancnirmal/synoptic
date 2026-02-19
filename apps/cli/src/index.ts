@@ -11,4 +11,7 @@ program.name("synoptic").description("Synoptic CLI scaffold").version("0.1.0");
 registerOperatorCommands(program);
 registerAgentCommands(program);
 
-program.parse();
+program.parseAsync().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

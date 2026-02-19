@@ -7,7 +7,10 @@ import type {
   MarketExecuteRequest,
   MarketExecuteResponse,
   MarketQuoteRequest,
-  MarketQuoteResponse
+  MarketQuoteResponse,
+  ShopifyCatalogSearchRequest,
+  ShopifyCatalogSearchResponse,
+  ShopifyProductDetailsResponse
 } from "@synoptic/types/rest";
 
 const API_URL = process.env.SYNOPTIC_API_URL ?? "http://localhost:3001";
@@ -75,6 +78,17 @@ export async function fetchOrder(orderId: string): Promise<GetOrderResponse> {
 
 export async function listAgentEvents(agentId: string): Promise<ListEventsResponse> {
   return apiRequest<ListEventsResponse>(`/events?agentId=${encodeURIComponent(agentId)}`);
+}
+
+export async function searchShopifyCatalog(input: ShopifyCatalogSearchRequest): Promise<ShopifyCatalogSearchResponse> {
+  return apiRequest<ShopifyCatalogSearchResponse>("/shopify/catalog/search", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function getShopifyProductDetails(upid: string): Promise<ShopifyProductDetailsResponse> {
+  return apiRequest<ShopifyProductDetailsResponse>(`/shopify/catalog/product/${encodeURIComponent(upid)}`);
 }
 
 function buildMockPaymentHeader(): string {

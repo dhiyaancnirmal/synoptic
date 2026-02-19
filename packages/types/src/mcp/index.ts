@@ -29,10 +29,13 @@ export interface McpIdentityStatusOutput {
 
 export interface McpMarketListInput {
   venueType?: VenueType;
+  query?: string;
+  products_limit?: number;
 }
 
 export interface McpMarketListOutput {
   markets: Array<{ marketId: string; venueType: VenueType; baseAsset: string; quoteAsset: string }>;
+  catalog?: unknown;
 }
 
 export type McpTradeQuoteInput = MarketQuoteRequest;

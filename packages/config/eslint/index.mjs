@@ -9,6 +9,9 @@ const config = [
       "**/.next/**",
       "**/dist/**",
       "**/coverage/**",
+      "**/prisma/*.js",
+      "**/prisma/*.js.map",
+      "**/prisma/*.d.ts",
       "packages/contracts/artifacts/**",
       "packages/contracts/cache/**",
       "packages/contracts/typechain-types/**"

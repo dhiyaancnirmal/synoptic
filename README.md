@@ -42,6 +42,18 @@ Copy examples to real env files where needed:
 - `pnpm test` run scaffold tests
 - `pnpm build` build all workspaces
 - `pnpm --filter @synoptic/contracts compile` compile contracts
+- `pnpm --filter @synoptic/api prisma:migrate:deploy` apply API DB migrations
+- `pnpm --filter @synoptic/api test:integration` run API Postgres integration tests
+
+## Backend Reliability Test Flow
+1. Start Postgres (for local defaults: `docker compose -f docker/docker-compose.yml up -d postgres`).
+2. Ensure `apps/api/.env` has valid `DATABASE_URL`.
+3. Run migrations: `pnpm --filter @synoptic/api prisma:migrate:deploy`.
+4. Run integration suite: `pnpm --filter @synoptic/api test:integration`.
+
+Note:
+- Payment verification/settlement endpoint is configured as a generic provider URL.
+- Use `PAYMENT_PROVIDER_URL` (preferred) or `FACILITATOR_URL` (backward-compatible alias).
 
 ## Interface Governance
 Interface contracts are frozen by policy in `files/architecture/04_INTERFACE_CONTRACTS.md`.

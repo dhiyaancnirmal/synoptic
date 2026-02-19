@@ -2,12 +2,32 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
 
 jobs:
   validate:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: synoptic
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d synoptic"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/synoptic
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/synoptic
+      JWT_SECRET: ci-secret-ci-secret
+      KITE_RPC_URL: https://rpc-testnet.gokite.ai/
+      KITE_CHAIN_ID: "2368"
+      SETTLEMENT_TOKEN_ADDRESS: 0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,6 +54,9 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: API Integration Tests
+        run: pnpm --filter @synoptic/api test:integration
 
       - name: Build
         run: pnpm build

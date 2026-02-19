@@ -7,6 +7,11 @@ export interface HealthResponse {
   status: string;
   service: string;
   timestamp: string;
+  dependencies?: {
+    database: "up" | "down";
+    paymentProviderMode: "mock" | "http";
+    facilitatorMode?: "mock" | "http";
+  };
 }
 
 export type ApiErrorCode =
@@ -23,7 +28,11 @@ export interface ApiErrorResponse {
   code: ApiErrorCode;
   message: string;
   requestId?: string;
-  details?: Record<string, unknown>;
+  details?: {
+    reason?: string;
+    retryable?: boolean;
+    [key: string]: unknown;
+  };
 }
 
 export interface SiweChallengeRequest {
@@ -114,4 +123,20 @@ export interface X402ChallengeResponse {
   message: string;
   payment: PaymentRequirement;
   retryWithHeader: "X-PAYMENT";
+}
+
+export interface ShopifyCatalogSearchRequest {
+  query: string;
+  available_for_sale?: boolean;
+  min_price?: number;
+  max_price?: number;
+  products_limit?: number;
+}
+
+export interface ShopifyCatalogSearchResponse {
+  data: unknown;
+}
+
+export interface ShopifyProductDetailsResponse {
+  data: unknown;
 }

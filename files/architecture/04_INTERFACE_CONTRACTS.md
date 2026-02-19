@@ -16,6 +16,16 @@ No breaking schema change is allowed without:
 - `POST /markets/execute` (paid/x402-protected where configured)
 - `GET /orders/:orderId`
 - `GET /events?agentId=...`
+- `POST /shopify/catalog/search` (auth-protected; backend proxy to Shopify Catalog API)
+- `GET /shopify/catalog/product/:upid` (auth-protected; backend proxy to Shopify Catalog API)
+
+### REST Behavioral Clarifications (v1, non-breaking)
+- `POST /markets/execute` idempotency behavior:
+  - Same `idempotency-key` + identical payload returns the original `MarketExecuteResponse`.
+  - Same `idempotency-key` + different payload returns `409` with `code=VALIDATION_ERROR`.
+- API error payload `details` may include:
+  - `reason` (machine-readable failure class)
+  - `retryable` (boolean for transient payment-provider/network failures)
 
 ## WebSocket Events (v1)
 - `agent.created`
