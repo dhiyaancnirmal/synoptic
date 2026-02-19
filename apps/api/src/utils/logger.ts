@@ -1,3 +1,11 @@
-export function logInfo(message: string): void {
-  console.log(`[synoptic-api] ${message}`);
+import pino from "pino";
+
+export type Logger = pino.Logger;
+
+export function createLogger(level = process.env.LOG_LEVEL ?? "info"): Logger {
+  return pino({
+    level,
+    base: { service: "synoptic-api" },
+    timestamp: pino.stdTimeFunctions.isoTime
+  });
 }
