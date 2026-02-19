@@ -7,8 +7,8 @@ import type { OrderRejectionReason } from "@synoptic/types/orders";
 import type { ApiContext } from "../context.js";
 import { requireAuth } from "../middleware/auth.js";
 import { createX402Middleware } from "../middleware/x402.js";
+import { createExecutionOrchestrator } from "../services/execution-orchestrator.js";
 import { publishEvent } from "../services/events.js";
-import { buildQuote } from "../services/quote.js";
 import { ApiError, sendApiError } from "../utils/errors.js";
 import { mapOrder } from "../utils/mappers.js";
 
@@ -27,6 +27,12 @@ const executeSchema = quoteSchema.extend({
 
 function requestHash(body: unknown): string {
   return createHash("sha256").update(JSON.stringify(body)).digest("hex");
+}
+
+function deriveExecutionIdempotencyKey(input: MarketExecuteRequest): string {
+  const nonce = input.quoteId ?? "no-quote";
+  const source = `${input.agentId}|${input.marketId}|${input.side}|${input.size}|${nonce}`;
+  return createHash("sha256").update(source).digest("hex");
 }
 
 async function loadAgentOrFail(context: ApiContext, agentId: string): Promise<void> {
@@ -84,6 +90,10 @@ async function computeRejectionReason(context: ApiContext, quote: MarketQuoteRes
     return "RISK_LIMIT";
   }
 
+  if (notional > context.config.MAX_TRADE_NOTIONAL_BUSDT) {
+    return "RISK_LIMIT";
+  }
+
   if (rule.dailySpent + notional > rule.dailyLimit) {
     return "INSUFFICIENT_FUNDS";
   }
@@ -119,6 +129,7 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
   const authMiddleware = requireAuth(context.config.JWT_SECRET);
   const x402Quote = createX402Middleware(context, "/markets/quote");
   const x402Execute = createX402Middleware(context, "/markets/execute");
+  const execution = createExecutionOrchestrator(context);
 
   app.post(
     "/markets/quote",
@@ -142,13 +153,11 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
 
       try {
         await loadAgentOrFail(context, parsed.data.agentId);
+        const quote = await execution.quote(parsed.data);
+        res.json(quote);
       } catch (error) {
         sendApiError(res, error as ApiError, req.requestId);
-        return;
       }
-
-      const quote = await buildQuote(parsed.data, { source: context.config.PRICE_SOURCE });
-      res.json(quote);
     }
   );
 
@@ -179,14 +188,14 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
         return;
       }
 
-      const idemKey = req.header("idempotency-key") ?? parsed.data.quoteId;
+      const idemKey = req.header("idempotency-key") ?? deriveExecutionIdempotencyKey(parsed.data);
       if (idemKey) {
         const existing = await context.prisma.idempotencyKey.findUnique({ where: { key: idemKey } });
         if (existing) {
           if (existing.requestHash !== requestHash(req.body)) {
             sendApiError(
               res,
-              new ApiError("VALIDATION_ERROR", 409, "Idempotency key reused with different payload", {
+              new ApiError("IDEMPOTENCY_CONFLICT", 409, "Idempotency key reused with different payload", {
                 reason: "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH",
                 retryable: false
               }),
@@ -200,10 +209,7 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
         }
       }
 
-      const quote = await buildQuote(parsed.data, { source: context.config.PRICE_SOURCE });
-      const rejectionReason = await computeRejectionReason(context, quote);
       const settlement = req.paymentSettlement;
-
       if (!settlement) {
         sendApiError(
           res,
@@ -213,6 +219,27 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
         return;
       }
 
+      let quote: MarketQuoteResponse;
+      try {
+        quote = await execution.quote(parsed.data);
+      } catch (error) {
+        sendApiError(res, error as ApiError, req.requestId);
+        return;
+      }
+
+      const riskRejection = await computeRejectionReason(context, quote);
+
+      const executionResult =
+        riskRejection === null
+          ? await execution.execute(parsed.data, idemKey)
+          : {
+              bridge: { required: false, status: "SKIPPED" as const },
+              swap: { status: "FAILED" as const },
+              failureCode: "RISK_LIMIT" as const,
+              rejectionReason: riskRejection
+            };
+
+      const rejectionReason = executionResult.rejectionReason ?? riskRejection;
       const order = await context.prisma.order.create({
         data: {
           orderId: randomUUID(),
@@ -235,7 +262,8 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
           status: "ERROR",
           metadata: {
             orderId: order.orderId,
-            reason: rejectionReason
+            reason: rejectionReason,
+            failureCode: executionResult.failureCode
           }
         });
       } else {
@@ -246,27 +274,32 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
           status: "SUCCESS",
           metadata: {
             orderId: order.orderId,
-            settlementId: settlement.settlementId
+            settlementId: settlement.settlementId,
+            swapTxHash: executionResult.swap.txHash,
+            bridgeSourceTxHash: executionResult.bridge.sourceTxHash,
+            bridgeDestinationTxHash: executionResult.bridge.destinationTxHash
           }
         });
       }
 
       const response: MarketExecuteResponse = {
         order: mapOrder(order),
-        settlement
+        settlement,
+        executionPath: "BASE_SEPOLIA_UNISWAP_V3",
+        bridge: executionResult.bridge,
+        swap: executionResult.swap,
+        failureCode: executionResult.failureCode
       };
 
-      if (idemKey) {
-        await context.prisma.idempotencyKey.create({
-          data: {
-            key: idemKey,
-            route: "/markets/execute",
-            requestHash: requestHash(req.body),
-            responseJson: response as unknown as Prisma.InputJsonValue,
-            expiresAt: new Date(Date.now() + 24 * 60 * 60_000)
-          }
-        });
-      }
+      await context.prisma.idempotencyKey.create({
+        data: {
+          key: idemKey,
+          route: "/markets/execute",
+          requestHash: requestHash(req.body),
+          responseJson: response as unknown as Prisma.InputJsonValue,
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000)
+        }
+      });
 
       res.json(response);
     }

@@ -12,6 +12,7 @@ export interface HealthResponse {
     paymentProviderMode: "mock" | "http";
     facilitatorMode?: "mock" | "http";
     authMode?: "siwe" | "dev";
+    tradingMode?: "bridge_to_base_v1";
   };
 }
 
@@ -23,6 +24,15 @@ export type ApiErrorCode =
   | "PAYMENT_REQUIRED"
   | "INVALID_PAYMENT"
   | "FACILITATOR_UNAVAILABLE"
+  | "UNSUPPORTED_MARKET"
+  | "LIQUIDITY_UNAVAILABLE"
+  | "BRIDGE_REQUIRED"
+  | "BRIDGE_TIMEOUT"
+  | "BRIDGE_FAILED"
+  | "DESTINATION_CREDIT_NOT_FOUND"
+  | "SWAP_REVERTED"
+  | "SLIPPAGE_EXCEEDED"
+  | "IDEMPOTENCY_CONFLICT"
   | "INTERNAL_ERROR";
 
 export interface ApiErrorResponse {
@@ -95,6 +105,10 @@ export interface MarketQuoteResponse {
   notional: string;
   fee: string;
   expiresAt: string;
+  route: "UNISWAP_V3";
+  poolAddress?: string;
+  priceImpactBps?: number;
+  liquidityCheck: "PASS" | "FAIL";
 }
 
 export interface MarketExecuteRequest {
@@ -110,6 +124,28 @@ export interface MarketExecuteRequest {
 export interface MarketExecuteResponse {
   order: OrderRecord;
   settlement: PaymentSettlement;
+  executionPath: "BASE_SEPOLIA_UNISWAP_V3";
+  bridge?: {
+    required: boolean;
+    sourceTxHash?: string;
+    destinationTxHash?: string;
+    status: "SKIPPED" | "SUBMITTED" | "CONFIRMED" | "DELAYED" | "FAILED";
+  };
+  swap?: {
+    txHash?: string;
+    status: "SUBMITTED" | "CONFIRMED" | "FAILED";
+    amountIn?: string;
+    amountOut?: string;
+  };
+  failureCode?:
+    | "LIQUIDITY_UNAVAILABLE"
+    | "BRIDGE_TIMEOUT"
+    | "BRIDGE_FAILED"
+    | "DESTINATION_CREDIT_NOT_FOUND"
+    | "SWAP_REVERTED"
+    | "RISK_LIMIT"
+    | "UNSUPPORTED_MARKET"
+    | "SLIPPAGE_EXCEEDED";
 }
 
 export interface GetOrderResponse {

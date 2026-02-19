@@ -36,6 +36,11 @@ enum OrderRejectionReason {
   FACILITATOR_UNAVAILABLE
   RISK_LIMIT
   INVALID_REQUEST
+  LIQUIDITY_UNAVAILABLE
+  BRIDGE_FAILED
+  BRIDGE_TIMEOUT
+  SWAP_REVERTED
+  UNSUPPORTED_MARKET
 }
 
 enum SettlementStatus {
@@ -56,6 +61,24 @@ enum EventName {
   TRADE_EXECUTED
   TRADE_REJECTED
   RISK_LIMIT_HIT
+  BRIDGE_SUBMITTED
+  BRIDGE_CONFIRMED
+  BRIDGE_FAILED
+  TRADE_SWAP_SUBMITTED
+  TRADE_SWAP_CONFIRMED
+  TRADE_SWAP_FAILED
+}
+
+enum ExecutionIntentStatus {
+  INTENT_CREATED
+  QUOTED
+  RISK_OK
+  BRIDGE_REQUIRED
+  BRIDGE_SUBMITTED
+  BRIDGE_CONFIRMED_DST
+  SWAP_SUBMITTED
+  SWAP_CONFIRMED
+  FAILED
 }
 
 model Agent {
@@ -67,6 +90,7 @@ model Agent {
   settlements   Settlement[]
   events        Event[]
   riskRule      RiskRule?
+  intents       ExecutionIntent[]
 }
 
 model Order {
@@ -143,4 +167,26 @@ model RiskRule {
   updatedAt     DateTime @updatedAt
 
   agent         Agent    @relation(fields: [agentId], references: [agentId], onDelete: Cascade)
+}
+
+model ExecutionIntent {
+  intentId                String                @id
+  idempotencyKey          String                @unique
+  agentId                 String
+  marketId                String
+  side                    OrderSide
+  size                    String
+  status                  ExecutionIntentStatus
+  failureCode             String?
+  bridgeSourceTxHash      String?
+  bridgeDestinationTxHash String?
+  swapTxHash              String?
+  quoteJson               Json
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+
+  agent                   Agent                 @relation(fields: [agentId], references: [agentId], onDelete: Cascade)
+
+  @@index([agentId, createdAt])
+  @@index([status])
 }

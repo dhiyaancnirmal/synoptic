@@ -7,7 +7,12 @@ export type OrderRejectionReason =
   | "INVALID_PAYMENT"
   | "FACILITATOR_UNAVAILABLE"
   | "RISK_LIMIT"
-  | "INVALID_REQUEST";
+  | "INVALID_REQUEST"
+  | "LIQUIDITY_UNAVAILABLE"
+  | "BRIDGE_FAILED"
+  | "BRIDGE_TIMEOUT"
+  | "SWAP_REVERTED"
+  | "UNSUPPORTED_MARKET";
 
 export interface OrderRecord {
   orderId: string;

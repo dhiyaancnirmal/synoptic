@@ -22,7 +22,8 @@ export function registerHealthRoute(app: Express, context: ApiContext): void {
         database,
         paymentProviderMode: context.config.PAYMENT_MODE,
         facilitatorMode: context.config.PAYMENT_MODE,
-        authMode: context.config.AUTH_MODE
+        authMode: context.config.AUTH_MODE,
+        tradingMode: context.config.TRADING_MODE
       }
     });
   });

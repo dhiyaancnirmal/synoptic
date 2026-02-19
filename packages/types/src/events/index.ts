@@ -5,7 +5,13 @@ export type SynopticEventName =
   | "x402.payment.settled"
   | "trade.executed"
   | "trade.rejected"
-  | "risk.limit.hit";
+  | "risk.limit.hit"
+  | "bridge.submitted"
+  | "bridge.confirmed"
+  | "bridge.failed"
+  | "trade.swap.submitted"
+  | "trade.swap.confirmed"
+  | "trade.swap.failed";
 
 export interface SynopticEventEnvelope {
   eventId: string;

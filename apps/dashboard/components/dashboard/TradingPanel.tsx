@@ -22,13 +22,13 @@ export function TradingPanel({ orders }: TradingPanelProps) {
         </div>
         <div>
           <p className="pixel-text">Perps</p>
-          <h4>Coming soon</h4>
-          <p>Enabled after risk model completion</p>
+          <h4>Paper mode</h4>
+          <p>Placeholder only in this bounty cycle (not live execution)</p>
         </div>
         <div>
           <p className="pixel-text">Prediction</p>
-          <h4>Coming soon</h4>
-          <p>Enabled after market validity checks</p>
+          <h4>Paper mode</h4>
+          <p>Placeholder only in this bounty cycle (not live execution)</p>
         </div>
       </div>
       <div className="dash-table">

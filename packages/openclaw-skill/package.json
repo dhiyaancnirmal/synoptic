@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "echo 'openclaw skill has no build step'",
-    "lint": "echo 'openclaw skill lint placeholder'",
-    "typecheck": "echo 'openclaw skill typecheck placeholder'",
-    "test": "echo 'openclaw skill test placeholder'",
-    "clean": "echo 'openclaw skill clean placeholder'"
+    "build": "bash scripts/validate-skill.sh",
+    "lint": "bash scripts/validate-skill.sh",
+    "typecheck": "bash scripts/validate-skill.sh",
+    "test": "bash scripts/validate-skill.sh",
+    "clean": "echo 'openclaw skill has no build artifacts to clean'"
   }
 }

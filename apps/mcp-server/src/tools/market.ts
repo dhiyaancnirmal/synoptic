@@ -2,9 +2,7 @@ import type { McpMarketListInput, McpMarketListOutput } from "@synoptic/types/mc
 import { getShopifyProductDetails, searchShopifyCatalog } from "../api.js";
 
 const DEFAULT_MARKETS: McpMarketListOutput["markets"] = [
-  { marketId: "BTC-USD", venueType: "SPOT", baseAsset: "BTC", quoteAsset: "USD" },
-  { marketId: "ETH-USD", venueType: "SPOT", baseAsset: "ETH", quoteAsset: "USD" },
-  { marketId: "KITE-USD", venueType: "SPOT", baseAsset: "KITE", quoteAsset: "USD" }
+  { marketId: "KITE_bUSDT_BASE_SEPOLIA", venueType: "SPOT", baseAsset: "KITE", quoteAsset: "bUSDT" }
 ];
 
 export async function listMarkets(input: McpMarketListInput = {}): Promise<McpMarketListOutput> {

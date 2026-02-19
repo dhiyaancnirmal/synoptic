@@ -10,7 +10,13 @@ const eventNameMap: Record<SynopticEventName, PrismaEventName> = {
   "x402.payment.settled": "X402_PAYMENT_SETTLED",
   "trade.executed": "TRADE_EXECUTED",
   "trade.rejected": "TRADE_REJECTED",
-  "risk.limit.hit": "RISK_LIMIT_HIT"
+  "risk.limit.hit": "RISK_LIMIT_HIT",
+  "bridge.submitted": "BRIDGE_SUBMITTED",
+  "bridge.confirmed": "BRIDGE_CONFIRMED",
+  "bridge.failed": "BRIDGE_FAILED",
+  "trade.swap.submitted": "TRADE_SWAP_SUBMITTED",
+  "trade.swap.confirmed": "TRADE_SWAP_CONFIRMED",
+  "trade.swap.failed": "TRADE_SWAP_FAILED"
 };
 
 const reverseEventNameMap = Object.fromEntries(

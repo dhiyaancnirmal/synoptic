@@ -72,12 +72,14 @@ class MockPaymentProvider implements PaymentProvider {
 class HttpPaymentProvider implements PaymentProvider {
   constructor(
     private readonly facilitatorUrl: string,
-    private readonly timeoutMs: number
+    private readonly timeoutMs: number,
+    private readonly verifyPath: string,
+    private readonly settlePath: string
   ) {}
 
   async verify(payment: DecodedPayment, requirement: PaymentRequirement): Promise<VerifyPaymentResult> {
     try {
-      const response = await fetchWithTimeout(`${this.facilitatorUrl}/verify`, this.timeoutMs, {
+      const response = await fetchWithTimeout(buildFacilitatorEndpoint(this.facilitatorUrl, this.verifyPath), this.timeoutMs, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ payment, requirement })
@@ -99,7 +101,7 @@ class HttpPaymentProvider implements PaymentProvider {
 
   async settle(payment: DecodedPayment, requirement: PaymentRequirement): Promise<SettlePaymentResult> {
     try {
-      const response = await fetchWithTimeout(`${this.facilitatorUrl}/settle`, this.timeoutMs, {
+      const response = await fetchWithTimeout(buildFacilitatorEndpoint(this.facilitatorUrl, this.settlePath), this.timeoutMs, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ payment, requirement })
@@ -123,6 +125,8 @@ class HttpPaymentProvider implements PaymentProvider {
 export interface PaymentServiceConfig {
   mode: "mock" | "http";
   facilitatorUrl: string;
+  verifyPath?: string;
+  settlePath?: string;
   network: string;
   asset: string;
   amount: string;
@@ -135,7 +139,12 @@ export interface PaymentServiceConfig {
 }
 
 export function createPaymentService(config: PaymentServiceConfig, provider?: PaymentProvider): PaymentService {
-  const paymentProvider = provider ?? createPaymentProvider(config.mode, config.facilitatorUrl, config.timeoutMs ?? 3000);
+  const paymentProvider =
+    provider ??
+    createPaymentProvider(config.mode, config.facilitatorUrl, config.timeoutMs ?? 3000, {
+      verifyPath: config.verifyPath,
+      settlePath: config.settlePath
+    });
   const retries = config.retries ?? 3;
 
   return {
@@ -213,7 +222,12 @@ export function createPaymentService(config: PaymentServiceConfig, provider?: Pa
   };
 }
 
-export function createPaymentProvider(mode: "mock" | "http", facilitatorUrl: string, timeoutMs: number): PaymentProvider {
+export function createPaymentProvider(
+  mode: "mock" | "http",
+  facilitatorUrl: string,
+  timeoutMs: number,
+  paths: { verifyPath?: string; settlePath?: string } = {}
+): PaymentProvider {
   if (mode === "mock") {
     return new MockPaymentProvider();
   }
@@ -222,7 +236,12 @@ export function createPaymentProvider(mode: "mock" | "http", facilitatorUrl: str
     throw new Error("FACILITATOR_URL must be an http(s) URL when PAYMENT_MODE=http");
   }
 
-  return new HttpPaymentProvider(facilitatorUrl, timeoutMs);
+  return new HttpPaymentProvider(
+    facilitatorUrl,
+    timeoutMs,
+    normalizeFacilitatorPath(paths.verifyPath ?? "/verify"),
+    normalizeFacilitatorPath(paths.settlePath ?? "/settle")
+  );
 }
 
 function backoffMs(attempt: number): number {
@@ -252,6 +271,20 @@ async function fetchWithTimeout(url: string, timeoutMs: number, init: RequestIni
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
+}
+
+function normalizeFacilitatorPath(path: string): string {
+  if (!path || path.trim().length === 0) {
+    return "/";
+  }
+
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
+function buildFacilitatorEndpoint(baseUrl: string, path: string): string {
+  const root = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  const normalizedPath = normalizeFacilitatorPath(path);
+  return `${root}${normalizedPath}`;
 }
 
 export function decodePaymentHeader(value: string): DecodedPayment {

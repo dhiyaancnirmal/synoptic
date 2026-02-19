@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { buildPaymentHeader } from "@synoptic/types/payments";
 import type {
   CreateAgentResponse,
@@ -29,6 +29,18 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const body = await response.text();
+    let parsedCode: string | undefined;
+    let parsedMessage: string | undefined;
+    try {
+      const parsed = JSON.parse(body) as { code?: string; message?: string };
+      parsedCode = parsed.code;
+      parsedMessage = parsed.message;
+    } catch {
+      parsedCode = undefined;
+    }
+    if (parsedCode) {
+      throw new Error(`${parsedCode}: ${parsedMessage ?? "request failed"}`);
+    }
     throw new Error(`API ${response.status}: ${body}`);
   }
 
@@ -107,7 +119,7 @@ export async function executeStrategyOnce(input: StrategyExecutionRequest): Prom
     method: "POST",
     headers: {
       "x-payment": buildPaymentHeaderForMode(paymentMode, "synoptic-cli"),
-      "idempotency-key": randomUUID()
+      "idempotency-key": deriveExecutionIdempotencyKey(executeRequest)
     },
     body: JSON.stringify(executeRequest)
   });
@@ -118,12 +130,18 @@ export async function executeStrategyOnce(input: StrategyExecutionRequest): Prom
 function mapStrategyToOrderInput(strategy: string): Omit<MarketQuoteRequest, "agentId"> {
   switch (strategy.toLowerCase()) {
     case "mean-revert":
-      return { venueType: "SPOT", marketId: "ETH-USD", side: "BUY", size: "1" };
+      return { venueType: "SPOT", marketId: "KITE_bUSDT_BASE_SEPOLIA", side: "BUY", size: "1" };
     case "momentum":
-      return { venueType: "SPOT", marketId: "BTC-USD", side: "BUY", size: "0.2" };
+      return { venueType: "SPOT", marketId: "KITE_bUSDT_BASE_SEPOLIA", side: "BUY", size: "0.2" };
     case "risk-check":
-      return { venueType: "SPOT", marketId: "BTC-USD", side: "BUY", size: "1200" };
+      return { venueType: "SPOT", marketId: "KITE_bUSDT_BASE_SEPOLIA", side: "BUY", size: "1200" };
     default:
-      return { venueType: "SPOT", marketId: "ETH-USD", side: "BUY", size: "1" };
+      return { venueType: "SPOT", marketId: "KITE_bUSDT_BASE_SEPOLIA", side: "BUY", size: "1" };
   }
+}
+
+function deriveExecutionIdempotencyKey(input: MarketExecuteRequest): string {
+  const nonce = input.quoteId ?? "no-quote";
+  const source = `${input.agentId}|${input.marketId}|${input.side}|${input.size}|${nonce}`;
+  return createHash("sha256").update(source).digest("hex");
 }

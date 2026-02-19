@@ -39,6 +39,8 @@ async function main(): Promise<void> {
   const paymentService = createPaymentService({
     mode: config.PAYMENT_MODE,
     facilitatorUrl: config.FACILITATOR_URL ?? "mock://facilitator",
+    verifyPath: config.FACILITATOR_VERIFY_PATH,
+    settlePath: config.FACILITATOR_SETTLE_PATH,
     network: String(config.KITE_CHAIN_ID),
     asset: config.SETTLEMENT_TOKEN_ADDRESS,
     amount: config.X402_PRICE_USD,
@@ -89,7 +91,10 @@ async function main(): Promise<void> {
         chainId: config.KITE_CHAIN_ID,
         rpcUrl: config.KITE_RPC_URL,
         facilitatorUrl: config.FACILITATOR_URL,
+        facilitatorVerifyPath: config.FACILITATOR_VERIFY_PATH,
+        facilitatorSettlePath: config.FACILITATOR_SETTLE_PATH,
         paymentMode: config.PAYMENT_MODE,
+        tradingMode: config.TRADING_MODE,
         settlementToken: config.SETTLEMENT_TOKEN_ADDRESS
       },
       "Synoptic API listening"

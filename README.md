@@ -23,9 +23,12 @@ Synoptic is a docs-first TypeScript monorepo scaffold for a dashboard, API, MCP 
 ```bash
 corepack enable
 corepack prepare pnpm@9.15.4 --activate
+nvm use
 pnpm install
 pnpm dev
 ```
+
+Node requirement: use Node `22.x` (Hardhat is not supported on Node `25.x`).
 
 ## Environment Setup
 Copy examples to real env files where needed:
@@ -55,8 +58,11 @@ Copy examples to real env files where needed:
 Note:
 - Payment verification/settlement endpoint is configured as a generic provider URL.
 - Use `PAYMENT_PROVIDER_URL` (preferred) or `FACILITATOR_URL` (backward-compatible alias).
+- Override facilitator paths with `PAYMENT_PROVIDER_VERIFY_PATH`/`PAYMENT_PROVIDER_SETTLE_PATH`
+  (or `FACILITATOR_VERIFY_PATH`/`FACILITATOR_SETTLE_PATH`) for real Passport deployments.
 - `AUTH_MODE=siwe` enforces signature verification; `AUTH_MODE=dev` keeps local bootstrap behavior.
 - `PAYMENT_MODE=mock|http` controls payment provider behavior.
+- Perps/prediction are explicitly non-live in this cycle (paper/placeholder only).
 
 ## Interface Governance
 Interface contracts are frozen by policy in `files/architecture/04_INTERFACE_CONTRACTS.md`.

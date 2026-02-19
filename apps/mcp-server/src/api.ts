@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { buildPaymentHeader } from "@synoptic/types/payments";
 import type {
   CreateAgentResponse,
@@ -33,7 +33,23 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    let details = "";
+    let parsedErrorCode: string | undefined;
+    let parsedErrorMessage: string | undefined;
+    try {
+      details = await response.text();
+      const parsed = JSON.parse(details) as { code?: string; message?: string };
+      parsedErrorCode = parsed.code;
+      parsedErrorMessage = parsed.message;
+    } catch {
+      details = response.statusText;
+    }
+
+    if (parsedErrorCode) {
+      throw new Error(`${parsedErrorCode}: ${parsedErrorMessage ?? "request failed"}`);
+    }
+
+    throw new Error(`API request failed: ${response.status} ${details || response.statusText}`);
   }
 
   return (await response.json()) as T;
@@ -96,10 +112,16 @@ export async function executeMarket(input: MarketExecuteRequest): Promise<Market
     method: "POST",
     headers: {
       "x-payment": paymentHeader,
-      "idempotency-key": input.quoteId ?? randomUUID()
+      "idempotency-key": deriveExecutionIdempotencyKey(input)
     },
     body: JSON.stringify(input)
   });
+}
+
+function deriveExecutionIdempotencyKey(input: MarketExecuteRequest): string {
+  const nonce = input.quoteId ?? "no-quote";
+  const source = `${input.agentId}|${input.marketId}|${input.side}|${input.size}|${nonce}`;
+  return createHash("sha256").update(source).digest("hex");
 }
 
 export async function fetchOrder(orderId: string): Promise<GetOrderResponse> {

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { PrismaClient } from "@prisma/client";
 import type { PaymentRequirement } from "@synoptic/types/payments";
 import { ApiError } from "../utils/errors.js";
-import { createPaymentService, decodePaymentHeader, type PaymentProvider } from "./payment.js";
+import { createPaymentProvider, createPaymentService, decodePaymentHeader, type PaymentProvider } from "./payment.js";
 
 const requirement: PaymentRequirement = {
   network: "2368",
@@ -154,4 +154,42 @@ test("payment service maps retryable verify failures to FACILITATOR_UNAVAILABLE"
     }),
     (error: unknown) => error instanceof ApiError && error.code === "FACILITATOR_UNAVAILABLE"
   );
+});
+
+test("http payment provider uses configured verify/settle paths", async () => {
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (input: Parameters<typeof fetch>[0]): Promise<Response> => {
+    calls.push(String(input));
+    return new Response(JSON.stringify(calls.length === 1 ? { verified: true } : { settled: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  try {
+    const provider = createPaymentProvider("http", "https://facilitator.example/api", 500, {
+      verifyPath: "/v2/verify",
+      settlePath: "v2/settle"
+    });
+
+    const payment = {
+      paymentId: "pay-1",
+      signature: "sig_ok",
+      amount: "0.10",
+      asset: "0xasset",
+      network: "2368",
+      payer: "test"
+    };
+
+    const verify = await provider.verify(payment, requirement);
+    const settle = await provider.settle(payment, requirement);
+
+    assert.equal(verify.verified, true);
+    assert.equal(settle.settled, true);
+    assert.deepEqual(calls, ["https://facilitator.example/api/v2/verify", "https://facilitator.example/api/v2/settle"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

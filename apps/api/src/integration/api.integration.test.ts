@@ -39,12 +39,29 @@ if (!hasDatabase) {
     DATABASE_URL: databaseUrl as string,
     KITE_RPC_URL: "https://rpc-testnet.gokite.ai/",
     KITE_CHAIN_ID: 2368,
+    TRADING_MODE: "bridge_to_base_v1",
+    BASE_SEPOLIA_RPC_URL: "https://sepolia.base.org",
+    BASE_SEPOLIA_CHAIN_ID: 84532,
+    BASE_UNISWAP_V3_FACTORY: "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24",
+    BASE_UNISWAP_V3_ROUTER: "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4",
+    BASE_UNISWAP_QUOTER_V2: "0xC5290058841028F1614F3A6F0F5816cAd0df5E27",
+    KITE_BRIDGE_ROUTER: "0x7777777777777777777777777777777777777777",
+    KITE_TOKEN_ON_BASE: "0xFB9a6AF5C014c32414b4a6e208a89904c6dAe266",
+    BUSDT_TOKEN_ON_BASE: "0xdAD5b9eB32831D54b7f2D8c92ef4E2A68008989C",
+    KITE_TESTNET_USDT: "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
+    SERVER_SIGNER_PRIVATE_KEY: "0x1111111111111111111111111111111111111111111111111111111111111111",
+    BRIDGE_TIMEOUT_MS: 1_200_000,
+    MAX_TRADE_NOTIONAL_BUSDT: 10,
+    SLIPPAGE_BPS: 100,
+    SWAP_DEADLINE_SECONDS: 300,
     SETTLEMENT_TOKEN_ADDRESS: "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
     JWT_SECRET: "integration-secret-12345",
     SHOPIFY_TIMEOUT_MS: 5000,
     PAYMENT_MODE: "mock",
     FACILITATOR_URL: "mock://facilitator",
     FACILITATOR_TIMEOUT_MS: 100,
+    FACILITATOR_VERIFY_PATH: "/verify",
+    FACILITATOR_SETTLE_PATH: "/settle",
     PAYMENT_RETRY_ATTEMPTS: 2,
     X402_PAY_TO: "synoptic-facilitator",
     X402_PRICE_USD: "0.10",
@@ -60,6 +77,8 @@ if (!hasDatabase) {
     paymentService: createPaymentService({
       mode: baseConfig.PAYMENT_MODE,
       facilitatorUrl: baseConfig.FACILITATOR_URL ?? "mock://facilitator",
+      verifyPath: baseConfig.FACILITATOR_VERIFY_PATH,
+      settlePath: baseConfig.FACILITATOR_SETTLE_PATH,
       network: String(baseConfig.KITE_CHAIN_ID),
       asset: baseConfig.SETTLEMENT_TOKEN_ADDRESS,
       amount: baseConfig.X402_PRICE_USD,
@@ -82,6 +101,8 @@ if (!hasDatabase) {
     paymentService: createPaymentService({
       mode: "http",
       facilitatorUrl: "http://127.0.0.1:9",
+      verifyPath: "/verify",
+      settlePath: "/settle",
       network: String(baseConfig.KITE_CHAIN_ID),
       asset: baseConfig.SETTLEMENT_TOKEN_ADDRESS,
       amount: baseConfig.X402_PRICE_USD,
@@ -114,7 +135,7 @@ if (!hasDatabase) {
   }
 
   async function resetDb(): Promise<void> {
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE "Event", "Order", "Settlement", "IdempotencyKey", "RiskRule", "Agent" RESTART IDENTITY CASCADE;');
+    await prisma.$executeRawUnsafe('TRUNCATE TABLE "Event", "ExecutionIntent", "Order", "Settlement", "IdempotencyKey", "RiskRule", "Agent" RESTART IDENTITY CASCADE;');
   }
 
   before(async () => {
@@ -168,7 +189,7 @@ if (!hasDatabase) {
       .send({
         agentId,
         venueType: "SPOT",
-        marketId: "ETH-USD",
+        marketId: "KITE_bUSDT_BASE_SEPOLIA",
         side: "BUY",
         size: "1"
       })
@@ -182,7 +203,7 @@ if (!hasDatabase) {
       .send({
         agentId,
         venueType: "SPOT",
-        marketId: "ETH-USD",
+        marketId: "KITE_bUSDT_BASE_SEPOLIA",
         side: "BUY",
         size: "1",
         quoteId: quote.body.quoteId
@@ -205,7 +226,7 @@ if (!hasDatabase) {
       .send({
         agentId,
         venueType: "SPOT",
-        marketId: "BTC-USD",
+        marketId: "KITE_bUSDT_BASE_SEPOLIA",
         side: "BUY",
         size: "1200"
       })
@@ -222,7 +243,7 @@ if (!hasDatabase) {
       .send({
         agentId,
         venueType: "SPOT",
-        marketId: "BTC-USD",
+        marketId: "KITE_bUSDT_BASE_SEPOLIA",
         side: "BUY",
         size: "1000",
         limitPrice: "100"
@@ -230,7 +251,7 @@ if (!hasDatabase) {
       .expect(200);
 
     assert.equal(tooLargeNotional.body.order.status, "REJECTED");
-    assert.equal(tooLargeNotional.body.order.rejectionReason, "INSUFFICIENT_FUNDS");
+    assert.equal(tooLargeNotional.body.order.rejectionReason, "RISK_LIMIT");
   });
 
   test("invalid payment header returns deterministic 402 challenge", async () => {
@@ -241,7 +262,7 @@ if (!hasDatabase) {
       .send({
         agentId,
         venueType: "SPOT",
-        marketId: "ETH-USD",
+        marketId: "KITE_bUSDT_BASE_SEPOLIA",
         side: "BUY",
         size: "1"
       })
@@ -252,6 +273,39 @@ if (!hasDatabase) {
     assert.equal(typeof response.body.payment.amount, "string");
   });
 
+  test("unsupported market fails deterministically", async () => {
+    const quote = await request(app)
+      .post("/markets/quote")
+      .set(bearer())
+      .set("x-payment", paymentHeader())
+      .send({
+        agentId,
+        venueType: "SPOT",
+        marketId: "NOT_SUPPORTED",
+        side: "BUY",
+        size: "1"
+      })
+      .expect(400);
+
+    assert.equal(quote.body.code, "UNSUPPORTED_MARKET");
+
+    const execute = await request(app)
+      .post("/markets/execute")
+      .set(bearer())
+      .set("x-payment", paymentHeader())
+      .set("idempotency-key", `idem-${randomUUID()}`)
+      .send({
+        agentId,
+        venueType: "SPOT",
+        marketId: "NOT_SUPPORTED",
+        side: "BUY",
+        size: "1"
+      })
+      .expect(400);
+
+    assert.equal(execute.body.code, "UNSUPPORTED_MARKET");
+  });
+
   test("facilitator outage returns FACILITATOR_UNAVAILABLE with retryable detail", async () => {
     const response = await request(outageApp)
       .post("/markets/quote")
@@ -260,7 +314,7 @@ if (!hasDatabase) {
       .send({
         agentId,
         venueType: "SPOT",
-        marketId: "ETH-USD",
+        marketId: "KITE_bUSDT_BASE_SEPOLIA",
         side: "BUY",
         size: "1"
       })
@@ -275,7 +329,7 @@ if (!hasDatabase) {
     const payload = {
       agentId,
       venueType: "SPOT",
-      marketId: "ETH-USD",
+      marketId: "KITE_bUSDT_BASE_SEPOLIA",
       side: "BUY",
       size: "1"
     };
@@ -316,7 +370,7 @@ if (!hasDatabase) {
       .send({
         agentId,
         venueType: "SPOT",
-        marketId: "ETH-USD",
+        marketId: "KITE_bUSDT_BASE_SEPOLIA",
         side: "BUY",
         size: "1"
       })
