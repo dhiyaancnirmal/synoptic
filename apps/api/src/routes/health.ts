@@ -1,10 +1,19 @@
 import type { Express, Request, Response } from "express";
 import type { HealthResponse } from "@synoptic/types/rest";
+import type { ApiContext } from "../context.js";
 
-export function registerHealthRoute(app: Express): void {
-  app.get("/health", (_req: Request, res: Response<HealthResponse>) => {
+export function registerHealthRoute(app: Express, context: ApiContext): void {
+  app.get("/health", async (_req: Request, res: Response<HealthResponse>) => {
+    let status: HealthResponse["status"] = "ok";
+
+    try {
+      await context.prisma.$queryRaw`SELECT 1`;
+    } catch {
+      status = "degraded";
+    }
+
     res.json({
-      status: "ok",
+      status,
       service: "api",
       timestamp: new Date().toISOString()
     });

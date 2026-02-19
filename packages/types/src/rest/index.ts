@@ -26,6 +26,27 @@ export interface ApiErrorResponse {
   details?: Record<string, unknown>;
 }
 
+export interface SiweChallengeRequest {
+  address: string;
+}
+
+export interface SiweChallengeResponse {
+  nonce: string;
+  message: string;
+}
+
+export interface SiweVerifyRequest {
+  message: string;
+  signature: string;
+  agentId: string;
+  ownerAddress: string;
+  scopes?: string[];
+}
+
+export interface SiweVerifyResponse {
+  token: string;
+}
+
 export interface CreateAgentRequest {
   ownerAddress: string;
 }

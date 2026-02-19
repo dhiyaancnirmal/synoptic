@@ -1,4 +1,15 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: synoptic
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - synoptic-postgres:/var/lib/postgresql/data
+
   api:
     build:
       context: ..
@@ -7,6 +18,8 @@ services:
       - ../apps/api/.env.example
     ports:
       - "3001:3001"
+    depends_on:
+      - postgres
   mcp-server:
     build:
       context: ..
@@ -15,3 +28,6 @@ services:
       - ../apps/mcp-server/.env.example
     depends_on:
       - api
+
+volumes:
+  synoptic-postgres:

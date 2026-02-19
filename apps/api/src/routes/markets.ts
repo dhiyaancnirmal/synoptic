@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import type { OrderRecord, OrderRejectionReason } from "@synoptic/types/orders";
 import type {
   ApiErrorResponse,
-  GetOrderResponse,
   MarketExecuteRequest,
   MarketExecuteResponse,
   MarketQuoteRequest,
@@ -155,7 +155,7 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
             return;
           }
 
-          res.json(existing.responseJson as MarketExecuteResponse);
+          res.json(existing.responseJson as unknown as MarketExecuteResponse);
           return;
         }
       }
@@ -217,7 +217,7 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
             key: idemKey,
             route: "/markets/execute",
             requestHash: requestHash(req.body),
-            responseJson: response
+            responseJson: response as unknown as Prisma.InputJsonValue
           }
         });
       }
@@ -226,18 +226,4 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
     }
   );
 
-  app.get("/orders/:orderId", authMiddleware, async (req: Request<{ orderId: string }>, res: Response<GetOrderResponse>) => {
-    const order = await context.prisma.order.findUnique({ where: { orderId: req.params.orderId } });
-    if (!order) {
-      sendApiError(res, new ApiError("NOT_FOUND", 404, "Order not found"), req.requestId);
-      return;
-    }
-
-    if (req.auth?.agentId !== order.agentId) {
-      sendApiError(res, new ApiError("FORBIDDEN", 403, "Order does not belong to caller"), req.requestId);
-      return;
-    }
-
-    res.json({ order: mapOrder(order) });
-  });
 }

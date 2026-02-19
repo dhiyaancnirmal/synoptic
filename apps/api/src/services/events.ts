@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import type { EventName as PrismaEventName } from "@prisma/client";
 import type { EventStatus, SynopticEventEnvelope, SynopticEventName } from "@synoptic/types/events";
 import type { ApiContext } from "../context.js";
@@ -46,7 +47,7 @@ export async function publishEvent(
       agentId: payload.agentId,
       timestamp: new Date(payload.timestamp),
       status: payload.status,
-      metadata: payload.metadata
+      metadata: payload.metadata as Prisma.InputJsonValue
     }
   });
 

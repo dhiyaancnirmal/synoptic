@@ -75,13 +75,17 @@ async function issueChallenge(
     return;
   }
 
-  await publishEvent(context, {
-    eventName: "x402.challenge.issued",
-    agentId,
-    status: "INFO",
-    metadata: {
-      route,
-      requestId: requestId ?? null
-    }
-  });
+  try {
+    await publishEvent(context, {
+      eventName: "x402.challenge.issued",
+      agentId,
+      status: "INFO",
+      metadata: {
+        route,
+        requestId: requestId ?? null
+      }
+    });
+  } catch {
+    context.logger.warn({ route, agentId, requestId }, "Failed to persist x402 challenge event");
+  }
 }
