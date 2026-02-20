@@ -1,13 +1,100 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { pingApi } from "@/lib/api/client";
 import { buildExplorerTxUrl, resolveChainLabel } from "@/lib/api/explorer";
 import { RequireSession } from "@/components/dashboard/RequireSession";
 import { RouteShell } from "@/components/dashboard/RouteShell";
 import { useDashboardRuntime } from "@/lib/state/use-dashboard-runtime";
+import type { TradeVM } from "@/lib/mappers";
+
+interface TokenExposure {
+  symbol: string;
+  amount: number;
+  change: number;
+}
+
+interface TokenVolume {
+  symbol: string;
+  volume: number;
+  trades: number;
+}
+
+function useDerivedExposure(trades: TradeVM[]): TokenExposure[] {
+  return useMemo(() => {
+    const holdings = new Map<string, { amount: number; change: number }>();
+
+    for (const trade of trades) {
+      if (trade.executionChain !== "monad-testnet" && trade.executionChain !== "monad") continue;
+      if (trade.status !== "confirmed") continue;
+
+      const [tokenIn, tokenOut] = trade.pair.split(" -> ").map((s) => s.trim());
+      const amountIn = parseFloat(trade.amountIn) || 0;
+      const amountOut = parseFloat(trade.amountOut) || 0;
+
+      if (tokenIn && !isNaN(amountIn)) {
+        const current = holdings.get(tokenIn) || { amount: 0, change: 0 };
+        holdings.set(tokenIn, {
+          amount: current.amount - amountIn,
+          change: current.change - amountIn,
+        });
+      }
+
+      if (tokenOut && !isNaN(amountOut)) {
+        const current = holdings.get(tokenOut) || { amount: 0, change: 0 };
+        holdings.set(tokenOut, {
+          amount: current.amount + amountOut,
+          change: current.change + amountOut,
+        });
+      }
+    }
+
+    return Array.from(holdings.entries())
+      .filter(([, data]) => data.amount !== 0)
+      .map(([symbol, data]) => ({
+        symbol,
+        amount: data.amount,
+        change: data.change,
+      }))
+      .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  }, [trades]);
+}
+
+function useTopTokensByVolume(trades: TradeVM[]): TokenVolume[] {
+  return useMemo(() => {
+    const volumes = new Map<string, { volume: number; trades: number }>();
+
+    for (const trade of trades) {
+      if (trade.executionChain !== "monad-testnet" && trade.executionChain !== "monad") continue;
+      if (trade.status !== "confirmed") continue;
+
+      const [tokenInRaw, tokenOutRaw] = trade.pair.split("->").map((s) => s.trim());
+      const tokenIn = tokenInRaw || "UNKNOWN";
+      const tokenOut = tokenOutRaw || "UNKNOWN";
+      const amountIn = Math.abs(parseFloat(trade.amountIn) || 0);
+      const amountOut = Math.abs(parseFloat(trade.amountOut) || 0);
+
+      const inCurrent = volumes.get(tokenIn) ?? { volume: 0, trades: 0 };
+      volumes.set(tokenIn, {
+        volume: inCurrent.volume + amountIn,
+        trades: inCurrent.trades + 1,
+      });
+
+      const outCurrent = volumes.get(tokenOut) ?? { volume: 0, trades: 0 };
+      volumes.set(tokenOut, {
+        volume: outCurrent.volume + amountOut,
+        trades: outCurrent.trades + 1,
+      });
+    }
+
+    return Array.from(volumes.entries())
+      .map(([symbol, value]) => ({ symbol, volume: value.volume, trades: value.trades }))
+      .sort((a, b) => b.volume - a.volume)
+      .slice(0, 5);
+  }, [trades]);
+}
 
 export function TradingRouteClient() {
   const runtime = useDashboardRuntime();
@@ -16,6 +103,10 @@ export function TradingRouteClient() {
   useEffect(() => {
     void pingApi().then(setApiHealth).catch(() => setApiHealth("unreachable"));
   }, []);
+
+  const exposure = useDerivedExposure(runtime.trades);
+  const topTokens = useTopTokensByVolume(runtime.trades);
+
   const selectedTradeId = searchParams.get("tradeId");
   const latest =
     (selectedTradeId ? runtime.trades.find((trade) => trade.id === selectedTradeId) : undefined) ?? runtime.trades[0];
@@ -41,11 +132,55 @@ export function TradingRouteClient() {
   return (
     <RequireSession>
       <RouteShell
-        title="Trading"
-        subtitle="execution state machine and attestation"
+        title="Spot Trading"
+        subtitle="execution state machine, exposure, and attestation"
         apiHealth={apiHealth}
         connectionStatus={runtime.connectionStatus}
       >
+        <article className="dash-panel">
+          <header className="dash-panel-head">
+            <h3>Top Tokens by Volume</h3>
+            <p className="pixel-text">from confirmed Monad spot trades</p>
+          </header>
+          {topTokens.length > 0 ? (
+            <div className="dash-kpi-grid">
+              {topTokens.map((token, index) => (
+                <div key={token.symbol} className="dash-kpi-card">
+                  <p className="pixel-text">#{index + 1}</p>
+                  <h3>{token.symbol}</h3>
+                  <p>volume {token.volume.toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
+                  <p>{token.trades} trades</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="dash-empty-inline">No confirmed Monad trades yet to rank tokens.</p>
+          )}
+        </article>
+
+        <article className="dash-panel">
+          <header className="dash-panel-head">
+            <h3>Derived Exposure</h3>
+            <p className="pixel-text">spot token holdings from trade history</p>
+          </header>
+
+          {exposure.length > 0 ? (
+            <div className="dash-exposure-grid">
+              {exposure.map((token) => (
+                <div key={token.symbol} className="dash-exposure-card">
+                  <p className="pixel-text">{token.symbol}</p>
+                  <h4 className={token.amount >= 0 ? "positive" : "negative"}>
+                    {token.amount >= 0 ? "+" : ""}
+                    {token.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                  </h4>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="dash-empty-inline">No confirmed trades to calculate exposure.</p>
+          )}
+        </article>
+
         <article className="dash-panel">
           <header className="dash-panel-head">
             <h3>Latest Swap</h3>
