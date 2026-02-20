@@ -1,5 +1,0 @@
-FROM node:22-alpine
-WORKDIR /app
-COPY . .
-RUN corepack enable && corepack prepare pnpm@9.15.4 --activate && pnpm install --frozen-lockfile=false
-CMD ["pnpm", "--filter", "@synoptic/mcp-server", "start"]
