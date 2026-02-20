@@ -1,0 +1,1 @@
+export const KITE_TESTNET_CHAIN_ID = 2368;

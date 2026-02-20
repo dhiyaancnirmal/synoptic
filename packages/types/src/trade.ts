@@ -18,10 +18,6 @@ export interface Trade {
   routingType: string;
   status: TradeStatus;
   executionTxHash?: string;
-  /**
-   * @deprecated Use executionTxHash.
-   */
-  sepoliaTxHash?: string;
   kiteAttestationTx?: string;
   strategyReason?: string;
   createdAt: string;

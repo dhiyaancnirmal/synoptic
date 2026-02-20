@@ -7,7 +7,7 @@ const TEST_PRIVATE_KEY = "0x59c6995e998f97a5a0044966f0945380f2fbe6f7f0f5a5f97f79
 function makeAdapter() {
   return new RealTradingAdapter({
     privateKey: TEST_PRIVATE_KEY,
-    sepoliaRpcUrl: "http://127.0.0.1:8545",
+    executionRpcUrl: "http://127.0.0.1:8545",
     uniswapApiKey: "test-key"
   });
 }
@@ -27,7 +27,7 @@ test("RealTradingAdapter enforces checkApproval before quote", async () => {
         tokenIn: "0x0000000000000000000000000000000000000001",
         tokenOut: "0x0000000000000000000000000000000000000002",
         amountIn: "1",
-        chainId: 11155111,
+        chainId: 10143,
         swapper: "0x0000000000000000000000000000000000000003"
       }),
     /Uniswap flow violation: call checkApproval before quote/
@@ -50,13 +50,13 @@ test("RealTradingAdapter enforces quote linkage before swap", async () => {
     walletAddress: "0x0000000000000000000000000000000000000003",
     token: "0x0000000000000000000000000000000000000001",
     amount: "1",
-    chainId: 11155111
+    chainId: 10143
   });
   await adapter.quote({
     tokenIn: "0x0000000000000000000000000000000000000001",
     tokenOut: "0x0000000000000000000000000000000000000002",
     amountIn: "1",
-    chainId: 11155111,
+    chainId: 10143,
     swapper: "0x0000000000000000000000000000000000000003"
   });
 

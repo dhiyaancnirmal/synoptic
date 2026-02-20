@@ -3,9 +3,9 @@
   "extends": "../config/tsconfig/node.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "module": "ESNext",
     "moduleResolution": "Bundler"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "drizzle.config.ts"]
 }

@@ -2,10 +2,9 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "../config/tsconfig/node.json",
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": ".",
-    "module": "CommonJS",
-    "moduleResolution": "Node"
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"]
   },
   "include": ["hardhat.config.ts", "scripts/**/*.ts", "test/**/*.ts"]
 }

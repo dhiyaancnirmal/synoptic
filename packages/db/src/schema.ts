@@ -60,7 +60,7 @@ export const trades = pgTable(
     quoteRequest: jsonb("quote_request"),
     quoteResponse: jsonb("quote_response"),
     swapTx: jsonb("swap_tx"),
-    executionTxHash: text("sepolia_tx_hash"),
+    executionTxHash: text("execution_tx_hash"),
     kiteAttestationTx: text("kite_attestation_tx"),
     gasUsed: text("gas_used"),
     errorMessage: text("error_message"),

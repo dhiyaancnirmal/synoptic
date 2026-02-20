@@ -16,7 +16,6 @@ function toTrade(row: typeof trades.$inferSelect): Trade {
     routingType: row.routingType,
     status: row.status as Trade["status"],
     executionTxHash,
-    sepoliaTxHash: executionTxHash,
     kiteAttestationTx: row.kiteAttestationTx ?? undefined,
     strategyReason: row.strategyReason ?? undefined,
     createdAt: row.createdAt.toISOString(),
@@ -76,7 +75,6 @@ export class TradeRepo {
     status: Trade["status"],
     details?: {
       executionTxHash?: string;
-      sepoliaTxHash?: string;
       kiteAttestationTx?: string;
       errorMessage?: string;
       gasUsed?: string;
@@ -86,7 +84,7 @@ export class TradeRepo {
       .update(trades)
       .set({
         status,
-        executionTxHash: details?.executionTxHash ?? details?.sepoliaTxHash,
+        executionTxHash: details?.executionTxHash,
         kiteAttestationTx: details?.kiteAttestationTx,
         errorMessage: details?.errorMessage,
         gasUsed: details?.gasUsed,

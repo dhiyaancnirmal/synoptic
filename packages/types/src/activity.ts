@@ -1,4 +1,4 @@
-export type ActivityChain = "kite-testnet" | "sepolia" | (string & {});
+export type ActivityChain = "kite-testnet" | "monad-testnet" | (string & {});
 
 export interface ActivityEvent {
   id: string;

@@ -1,15 +1,10 @@
 {
-  "name": "@synoptic/types",
+  "name": "@synoptic/agent-core",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./agent": "./src/agent.ts",
-    "./payment": "./src/payment.ts",
-    "./trade": "./src/trade.ts",
-    "./activity": "./src/activity.ts",
-    "./ws-events": "./src/ws-events.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --out-dir dist",
@@ -17,6 +12,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/**/*.test.ts",
     "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@synoptic/types": "workspace:*",
+    "ethers": "^6.16.0"
   },
   "devDependencies": {
     "tsup": "^8.5.0",
