@@ -21,13 +21,17 @@ interface QuickNodeWebhookBody {
 }
 
 function extractToken(headers: FastifyRequest["headers"]): string | undefined {
+  const quickNodeToken = headers["x-quicknode-token"];
+  if (typeof quickNodeToken === "string" && quickNodeToken.trim()) {
+    return quickNodeToken.trim();
+  }
+  const quickNodeSecret = headers["x-quicknode-secret"];
+  if (typeof quickNodeSecret === "string" && quickNodeSecret.trim()) {
+    return quickNodeSecret.trim();
+  }
   const auth = headers.authorization;
   if (typeof auth === "string" && auth.startsWith("Bearer ")) {
     return auth.slice("Bearer ".length).trim();
-  }
-
-  for (const value of Object.values(headers)) {
-    if (typeof value === "string" && value.trim()) return value.trim();
   }
   return undefined;
 }
