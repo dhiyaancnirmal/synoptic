@@ -4,15 +4,15 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./dist/index.js",
-    "./agent": "./dist/agent/index.js",
-    "./orders": "./dist/orders/index.js",
-    "./events": "./dist/events/index.js",
-    "./payments": "./dist/payments/index.js",
-    "./rest": "./dist/rest/index.js",
-    "./ws": "./dist/ws/index.js",
-    "./mcp": "./dist/mcp/index.js",
-    "./cli": "./dist/cli/index.js"
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./agent": { "types": "./dist/agent/index.d.ts", "default": "./dist/agent/index.js" },
+    "./orders": { "types": "./dist/orders/index.d.ts", "default": "./dist/orders/index.js" },
+    "./events": { "types": "./dist/events/index.d.ts", "default": "./dist/events/index.js" },
+    "./payments": { "types": "./dist/payments/index.d.ts", "default": "./dist/payments/index.js" },
+    "./rest": { "types": "./dist/rest/index.d.ts", "default": "./dist/rest/index.js" },
+    "./ws": { "types": "./dist/ws/index.d.ts", "default": "./dist/ws/index.js" },
+    "./mcp": { "types": "./dist/mcp/index.d.ts", "default": "./dist/mcp/index.js" },
+    "./cli": { "types": "./dist/cli/index.d.ts", "default": "./dist/cli/index.js" }
   },
   "types": "./dist/index.d.ts",
   "scripts": {

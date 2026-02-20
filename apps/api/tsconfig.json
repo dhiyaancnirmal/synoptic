@@ -3,7 +3,12 @@
   "extends": "../../packages/config/tsconfig/node.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@synoptic/types": ["../../packages/types/dist/index.d.ts"],
+      "@synoptic/types/*": ["../../packages/types/dist/*/index.d.ts"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts"]
 }
