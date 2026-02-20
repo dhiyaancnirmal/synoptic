@@ -50,6 +50,8 @@ Expected pass markers:
 
 Harness outputs are written to `artifacts/evidence/p0-p1/<timestamp-utc>/`.
 
+Explorer and trade mapping default to Kite + Monad; legacy Sepolia payload/explorer support is retained as documented compatibility shims (see PLAN.md).
+
 ## Evidence Checklist (Fresh Reviewer)
 
 Collect the following in one review session:

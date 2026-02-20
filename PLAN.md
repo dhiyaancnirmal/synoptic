@@ -128,7 +128,7 @@ The tick runner on Railway:
 
 ### 1.1 Clean Up Agent Server
 
-Strip all Sepolia references. Update env/config for Monad.
+Remove Sepolia from agent-server and runtime; use Monad env/config. Agent-server and runtime have no Sepolia references. The dashboard and shared types retain only documented compatibility shims (see Documentation policy): `sepoliaTxHash` in the trade mapper and `sepolia` in the explorer when env is set.
 
 **Files to modify:**
 - `apps/agent-server/src/env.ts` — replace SEPOLIA vars with MONAD vars
@@ -231,6 +231,36 @@ If AA SDK doesn't support arbitrary contract calls gaslessly, just fund the EOA 
 ```
 
 Every step that touches our API = x402 payment = on-chain settlement on Kite. This is the key demo point.
+
+### 1.6 Judge-Facing Trading Cockpit (Dashboard)
+
+We must ship a dedicated dashboard surface for judges that makes autonomous trading behavior obvious without reading logs.
+
+Required cockpit sections:
+1. **Agent Session Panel**
+- Session start time
+- Agent identity (`kitePassportId` / owner + executor address)
+- Budget cap and spend progression
+
+2. **Spot Trading Panel (Monad)**
+- Executed trades timeline (pair, size, status, tx hash)
+- Live balances/holdings for tracked spot tokens (MON/USDC/USDT/etc.)
+- Derived exposure view (spot holdings, not perp positions)
+
+3. **Payment + Attestation Panel**
+- x402 challenge/authorization/settlement lifecycle
+- Kite settlement tx link per paid action
+- Kite attestation tx link for each executed trade/service action
+
+4. **Realtime Stream Panel**
+- Render live stream for price/equity/throughput using Liveline (`https://benji.org/liveline`)
+- Show last streamed block/event timestamp
+- Show ingestion status for QuickNode stream events
+
+Constraints:
+- Keep canonical API mode as default.
+- Keep explorer links chain-aware and env-driven.
+- Preserve compatibility rendering for deprecated payload keys during migration window.
 
 ---
 
@@ -610,12 +640,12 @@ NEXT_PUBLIC_MONAD_EXPLORER_URL=https://testnet.monadexplorer.com
 | Lane | Scope | Can Start Immediately | Depends On | Deliverables |
 |------|-------|------------------------|------------|--------------|
 | A | Kite contracts + attestations | Yes | None | `ServiceRegistry` deployed, ABI exported, attestation adapter updated |
-| B | Agent server chain cutover | Yes | None | Sepolia removed, Monad env/config live, compat routes updated |
+| B | Agent server chain cutover | Yes | None | Sepolia removed from agent-server/runtime; Monad env/config live; dashboard/types retain documented compatibility shims (see Documentation policy) |
 | C | Trading execution on Monad | Yes | Lane B config baseline | Quote + execute working with fallback path decided |
-| D | Dashboard chain UX | Yes | None | Monad explorer links, Kite settlement links, payment/trade lifecycle UI |
+| D | Dashboard chain UX + trading cockpit | Yes | None | Monad explorer links, Kite settlement links, payment/trade lifecycle UI, session/trades/holdings cockpit, Liveline realtime panel |
 | E | CLI autonomous agent | Yes | None | `npx @synoptic/agent` with MCP payment + trade loop |
 | F | DevOps + quality gates | Yes | None | Railway/Vercel envs, smoke scripts, CI checks, demo script artifacts |
-| G | QuickNode Streams integration | After Lane C first trade event schema | Lane C output shape | Streams webhook ingestion + dashboard event feed |
+| G | QuickNode Streams integration | After Lane C first trade event schema | Lane C output shape | Streams webhook ingestion + dashboard event feed + cockpit stream status |
 | H | Multi-agent commerce stretch | After Lanes A/B/C stable | Paid endpoint baseline | Provider+consumer agent flow and docs |
 
 Execution gating:
@@ -646,7 +676,7 @@ H (Commerce)  <── A+B+C
 
 #### Sprint 1 (Days 1-2): Core Rails in Parallel
 1. Lane A deploys `ServiceRegistry` and publishes ABI/address.
-2. Lane B removes Sepolia and lands Monad runtime config.
+2. Lane B removes Sepolia from agent-server/runtime and lands Monad runtime config; dashboard/types retain documented compatibility shims (see Documentation policy).
 3. Lane C validates Uniswap API on Monad; if blocked, switches to direct router fallback.
 4. Lane D updates dashboard explorer links and payment/trade state mapping.
 5. Lane E scaffolds CLI MCP client and autonomous loop.
@@ -669,7 +699,7 @@ H (Commerce)  <── A+B+C
 ## Documentation Policy and Cleanup
 
 ### Delete
-- All Sepolia references (env vars, chain config, provider code)
+- All Sepolia references in agent-server env, chain config, and provider code. Dashboard and packages/types retain only documented compatibility shims (legacy mapper key `sepoliaTxHash`, explorer chain fallback for `sepolia` when `NEXT_PUBLIC_SEPOLIA_EXPLORER_URL` is set).
 - `apps/api/` (old API, already deleted in git status)
 - `apps/cli/` (old CLI, replace with new agent-cli)
 - `apps/mcp-server/` (old MCP server, already deleted)
@@ -677,6 +707,13 @@ H (Commerce)  <── A+B+C
 - Redundant dashboard docs: `apps/dashboard/FRONTEND_CONTRACTS.md`, `apps/dashboard/FRONTEND_PHASE_GATES.md`
 - `files/` directory (legacy docs)
 - Placeholder token addresses (`0x000...`, `0x111...`)
+
+### Compatibility shims (dashboard/types)
+
+The following are retained as deprecated compatibility only. No agent-server or runtime Sepolia config remains.
+
+1. **Trade mapper**: `mapTrade` accepts `sepoliaTxHash` as a fallback for `executionTxHash` (legacy API payloads).
+2. **Explorer**: Explorer supports `chain=sepolia` when `NEXT_PUBLIC_SEPOLIA_EXPLORER_URL` is set (legacy links/payloads).
 
 ### Canonical Docs Kept
 - `PLAN.md` (single source of truth for architecture, execution, and delivery)
