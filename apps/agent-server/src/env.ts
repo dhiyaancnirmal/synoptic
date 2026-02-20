@@ -23,6 +23,7 @@ export interface AgentServerEnv {
   kiteRpcUrl: string;
   uniswapApiKey: string;
   tradeRegistryAddress: string;
+  quicknodeSecurityToken: string;
 }
 
 function readNumber(value: string | undefined, fallback: number): number {
@@ -72,6 +73,11 @@ export function loadEnv(): AgentServerEnv {
     sepoliaRpcUrl: executionRpcUrl,
     kiteRpcUrl: process.env.KITE_RPC_URL ?? process.env.KITE_TESTNET_RPC ?? "",
     uniswapApiKey: process.env.UNISWAP_API_KEY ?? "",
-    tradeRegistryAddress: process.env.TRADE_REGISTRY_ADDRESS ?? ""
+    tradeRegistryAddress: process.env.TRADE_REGISTRY_ADDRESS ?? "",
+    quicknodeSecurityToken:
+      process.env.QUICKNODE_SECURITY_TOKEN ??
+      process.env.QUICKNODE_STREAM_SECURITY_TOKEN ??
+      process.env.QUICKNODE_STREAM_TOKEN ??
+      ""
   };
 }
