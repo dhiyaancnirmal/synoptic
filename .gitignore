@@ -30,3 +30,6 @@ packages/contracts/deployments
 data/
 .tmp_synoptic2_extract/
 .vercel
+.cursor
+artifacts/evidence
+synoptic2.zip
