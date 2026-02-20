@@ -1,11 +1,21 @@
-name: CI
+name: Frontend
 
 on:
   push:
+    paths:
+      - "apps/dashboard/**"
+      - "apps/agent-server/**"
+      - "packages/types/**"
+      - ".github/workflows/frontend.yml"
   pull_request:
+    paths:
+      - "apps/dashboard/**"
+      - "apps/agent-server/**"
+      - "packages/types/**"
+      - ".github/workflows/frontend.yml"
 
 jobs:
-  validate:
+  dashboard:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -19,7 +29,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22.22.0
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Verify Node Version Pin
@@ -33,23 +43,26 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Test
-        run: pnpm test
-
       - name: Prepare Agent Browser Runtime
         run: pnpm --filter @synoptic/dashboard exec agent-browser install || true
 
-      - name: Dashboard E2E (backend + frontend)
+      - name: Lint
+        run: pnpm --filter @synoptic/dashboard lint
+
+      - name: Legacy Endpoint Guard
+        run: pnpm --filter @synoptic/dashboard test:legacy-routes
+
+      - name: Typecheck
+        run: pnpm --filter @synoptic/dashboard typecheck
+
+      - name: Unit Tests
+        run: pnpm --filter @synoptic/dashboard test
+
+      - name: Integration E2E (backend + frontend)
         run: |
           set -euo pipefail
-          FRONTEND_PORT=3200
-          BACKEND_PORT=3201
+          FRONTEND_PORT=3100
+          BACKEND_PORT=3101
           BASE_URL="http://127.0.0.1:${FRONTEND_PORT}"
           API_URL="http://127.0.0.1:${BACKEND_PORT}"
 
@@ -58,8 +71,10 @@ jobs:
 
           PORT="${FRONTEND_PORT}" \
           NEXT_PUBLIC_AGENT_SERVER_URL="${API_URL}" \
-          NEXT_PUBLIC_API_MODE="compat" \
-          NEXT_PUBLIC_ALLOW_COMPAT_MODE="true" \
+          NEXT_PUBLIC_DASH_AGENT_ID="dev-agent" \
+          NEXT_PUBLIC_DASH_OWNER_ADDRESS="0xdev" \
+          NEXT_PUBLIC_API_MODE="canonical" \
+          NEXT_PUBLIC_ALLOW_COMPAT_MODE="false" \
           pnpm --filter @synoptic/dashboard dev &
           FRONTEND_PID=$!
 
@@ -87,7 +102,7 @@ jobs:
           BACKEND_PORT="${BACKEND_PORT}" \
           BASE_URL="${BASE_URL}" \
           API_URL="${API_URL}" \
-          pnpm test:e2e:dashboard
+          pnpm --filter @synoptic/dashboard test:e2e
 
       - name: Build
-        run: pnpm build
+        run: pnpm --filter @synoptic/dashboard build

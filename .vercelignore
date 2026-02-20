@@ -1,42 +1,12 @@
-# Dependencies - Vercel runs install
 node_modules
 **/node_modules
-
-# Git
 .git
-
-# Build outputs - Vercel will build
-**/dist
-**/.next
-**/out
-
-# Local env and secrets
-.env
-.env.*
-!.env.example
-
-# IDE and OS
-.idea
-.vscode
+.turbo
+.next
+dist
+coverage
 *.log
-.DS_Store
-
-# Contracts and heavy tooling (not needed for API deploy)
-packages/contracts
-**/artifacts
-**/cache
-**/typechain-types
-
-# Docs and misc
-*.md
-!apps/api/*.md
-files
-docs
-.github
-
-# Docker
-docker
-
-# Test and coverage
-**/coverage
-**/.turbo
+*.tsbuildinfo
+synoptic2.zip
+design information:inspiration.
+.agents

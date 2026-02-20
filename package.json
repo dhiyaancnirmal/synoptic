@@ -4,18 +4,27 @@
   "private": true,
   "packageManager": "pnpm@9.15.4",
   "engines": {
-    "node": ">=22.0.0 <25.0.0"
+    "node": ">=22.21.1 <23.0.0"
   },
   "volta": {
-    "node": "22.21.1",
+    "node": "22.22.0",
     "pnpm": "9.15.4"
   },
   "scripts": {
-    "dev": "turbo run dev --parallel",
-    "build": "turbo run build",
-    "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
+    "check:node": "node scripts/check-node-version.mjs",
+    "preinstall": "pnpm check:node",
+    "dev": "pnpm check:node && turbo dev",
+    "build": "pnpm check:node && turbo build",
+    "lint": "pnpm check:node && turbo lint",
+    "typecheck": "pnpm check:node && turbo typecheck",
+    "test": "pnpm check:node && pnpm guard:backend && turbo test",
+    "test:e2e:dashboard": "pnpm --filter @synoptic/dashboard test:e2e",
+    "guard:backend": "pnpm check:node && node scripts/backend-guardrails.mjs",
+    "db:push": "turbo db:push --filter=@synoptic/db",
+    "db:generate": "turbo db:generate --filter=@synoptic/db",
+    "db:migrate": "turbo db:migrate --filter=@synoptic/db",
+    "db:seed": "turbo seed --filter=@synoptic/db",
+    "deploy:contracts": "turbo deploy:contracts --filter=@synoptic/contracts",
     "clean": "turbo run clean && rm -rf node_modules",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

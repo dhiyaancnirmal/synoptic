@@ -1,6 +1,8 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": [],
+  "globalDependencies": [
+    ".env"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -8,9 +10,11 @@
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "dependsOn": ["^build"]
     },
     "lint": {
+      "dependsOn": ["^build"],
       "outputs": []
     },
     "typecheck": {
@@ -20,6 +24,22 @@
     "test": {
       "dependsOn": ["^build"],
       "outputs": []
+    },
+    "db:push": {
+      "cache": false
+    },
+    "db:generate": {
+      "cache": false
+    },
+    "db:migrate": {
+      "cache": false
+    },
+    "seed": {
+      "cache": false
+    },
+    "deploy:contracts": {
+      "cache": false,
+      "dependsOn": ["build"]
     },
     "clean": {
       "cache": false

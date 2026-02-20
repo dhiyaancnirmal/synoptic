@@ -4,6 +4,7 @@ node_modules
 dist
 coverage
 *.log
+*.tsbuildinfo
 .DS_Store
 .env
 .env.*
@@ -13,9 +14,10 @@ coverage
 !**/.env.example
 apps/dashboard/.next
 apps/dashboard/out
-apps/api/dist
-apps/mcp-server/dist
-apps/cli/dist
+apps/agent-server/dist
+packages/agent-core/dist
+packages/db/dist
+packages/db/drizzle
 packages/types/dist
 packages/contracts/artifacts
 packages/contracts/cache
@@ -26,3 +28,5 @@ packages/contracts/.env
 packages/contracts/broadcast
 packages/contracts/deployments
 data/
+.tmp_synoptic2_extract/
+.vercel

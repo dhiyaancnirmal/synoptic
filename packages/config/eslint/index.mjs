@@ -32,6 +32,23 @@ const config = [
     rules: {
       "@typescript-eslint/no-explicit-any": "off"
     }
+  },
+  {
+    files: [
+      "apps/dashboard/app/**/*.{tsx,ts}",
+      "apps/dashboard/components/**/*.{tsx,ts}"
+    ],
+    ignores: ["apps/dashboard/app/api/**/*.ts"],
+    rules: {
+      "no-restricted-globals": [
+        "error",
+        {
+          name: "fetch",
+          message:
+            "Use dashboard API clients in apps/dashboard/lib/api instead of direct fetch in UI routes/components."
+        }
+      ]
+    }
   }
 ];
 
