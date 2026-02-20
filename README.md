@@ -1,69 +1,70 @@
-# Synoptic Monorepo (Bootstrap)
+# Synoptic
 
-Synoptic is a docs-first TypeScript monorepo scaffold for a dashboard, API, MCP server, CLI, shared types, smart contracts, and OpenClaw skill package.
+Synoptic is an agent-native trading system where AI agents authenticate and pay via Kite x402, execute trades (Monad/Hyperliquid tracks), and attest outcomes on Kite.
 
-## Architecture Summary
-- `apps/dashboard`: Next.js shell for human visibility.
-- `apps/api`: Express + Socket.IO shell.
-- `apps/mcp-server`: MCP tool host shell.
-- `apps/cli`: operator/agent command shell.
-- `packages/types`: frozen contract-first shared interfaces.
-- `packages/contracts`: Solidity/Hardhat scaffold.
-- `packages/openclaw-skill`: OpenClaw skill scaffold.
-- `packages/config`: shared ESLint/Prettier/tsconfig presets.
+## Canonical Documentation
 
-## Workspace Map
-- `apps/*` executable services and UI
-- `packages/*` shared libraries, contracts, and skill assets
-- `docker/` local runtime containers
-- `.github/workflows/` CI automation
-- `files/` canonical architecture and workstream docs
+- `/Users/dhiyaan/Code/synoptic/PLAN.md` is the single source of truth for architecture, delivery plan, and implementation decisions.
+- `/Users/dhiyaan/Code/synoptic/bounties/` contains source bounty specs used for submission targeting.
 
-## Quickstart
+## Reviewer Quickstart (Node 22.21.1 exact)
+
 ```bash
+nvm install 22.21.1
+nvm use 22.21.1
 corepack enable
-corepack prepare pnpm@9.15.4 --activate
-nvm use
 pnpm install
+cp .env.example .env
+pnpm db:push
 pnpm dev
 ```
 
-Node requirement: use Node `22.x` (Hardhat is not supported on Node `25.x`).
+Local services:
+- Dashboard: `http://localhost:3000`
+- Agent server: `http://localhost:3001`
 
-## Environment Setup
-Copy examples to real env files where needed:
-- `apps/api/.env.example`
-- `apps/dashboard/.env.example`
-- `apps/mcp-server/.env.example`
-- `apps/cli/.env.example`
-- `packages/contracts/.env.example`
+## P0 + P1 Acceptance Lock (Kite + Uniswap First)
 
-## Command Matrix
-- `pnpm dev` run all services in watch/dev mode
-- `pnpm lint` run lint across workspaces
-- `pnpm typecheck` run TypeScript checks
-- `pnpm test` run scaffold tests
-- `pnpm build` build all workspaces
-- `pnpm --filter @synoptic/api dev:setup` apply migrations + seed data for local API
-- `pnpm --filter @synoptic/contracts compile` compile contracts
-- `pnpm --filter @synoptic/api prisma:migrate:deploy` apply API DB migrations
-- `pnpm --filter @synoptic/api test:integration` run API Postgres integration tests
+Run the evidence harness:
 
-## Backend Reliability Test Flow
-1. Start Postgres (for local defaults: `docker compose -f docker/docker-compose.yml up -d postgres`).
-2. Ensure `apps/api/.env` has valid `DATABASE_URL`.
-3. Run migrations: `pnpm --filter @synoptic/api prisma:migrate:deploy`.
-4. Run integration suite: `pnpm --filter @synoptic/api test:integration`.
+```bash
+nvm use 22.21.1
+bash scripts/p0-p1-evidence-harness.sh
+```
 
-Note:
-- Payment verification/settlement endpoint is configured as a generic provider URL.
-- Use `PAYMENT_PROVIDER_URL` (preferred) or `FACILITATOR_URL` (backward-compatible alias).
-- Override facilitator paths with `PAYMENT_PROVIDER_VERIFY_PATH`/`PAYMENT_PROVIDER_SETTLE_PATH`
-  (or `FACILITATOR_VERIFY_PATH`/`FACILITATOR_SETTLE_PATH`) for real Passport deployments.
-- `AUTH_MODE=siwe` enforces signature verification; `AUTH_MODE=dev` keeps local bootstrap behavior.
-- `PAYMENT_MODE=mock|http` controls payment provider behavior.
-- Perps/prediction are explicitly non-live in this cycle (paper/placeholder only).
+If services are already running and you want UI E2E evidence in the same run:
 
-## Interface Governance
-Interface contracts are frozen by policy in `files/architecture/04_INTERFACE_CONTRACTS.md`.
-Breaking changes require semver bump + changelog + migration note.
+```bash
+nvm use 22.21.1
+EXPECT_RUNNING_SERVERS=1 bash scripts/p0-p1-evidence-harness.sh
+```
+
+Expected pass markers:
+- `backend guardrails: pass`
+- `ok - Uniswap client uses required headers on check_approval, quote, and swap`
+- `ok - Uniswap client validates tx data in /check_approval and /swap responses`
+- `ok - oracle route enforces challenge, settles deterministic payment, and persists payment lifecycle`
+- `ok - trade routes support list/get`
+- `No direct legacy endpoint references found in dashboard route/component code.`
+- `dashboard e2e passed` (only with `EXPECT_RUNNING_SERVERS=1`)
+
+Harness outputs are written to `artifacts/evidence/p0-p1/<timestamp-utc>/`.
+
+## Evidence Checklist (Fresh Reviewer)
+
+Collect the following in one review session:
+- Terminal log bundle from `artifacts/evidence/p0-p1/<timestamp-utc>/`.
+- Screenshot of dashboard `/agents` page (agent identity visible).
+- Screenshot of dashboard `/payments` page showing `Oracle Challenge / Retry`.
+- Screenshot of dashboard `/trading` page showing `Trade Timeline`.
+- Screenshot of dashboard `/activity` page showing `Timeline`.
+- One Kite explorer link/screenshot proving settlement tx for a paid action.
+- One Monad explorer link/screenshot proving swap tx.
+- One Kite explorer link/screenshot proving attestation tx.
+
+## QuickNode Track Policy (After P0/P1 Only)
+
+QuickNode is explicitly non-blocking for acceptance:
+- Do not start QuickNode integration until the P0/P1 harness passes.
+- Default to one track only: Monad Streams.
+- HyperCore Streams remains stretch, only if extra endpoint/account exists and no P0/P1 risk remains.
