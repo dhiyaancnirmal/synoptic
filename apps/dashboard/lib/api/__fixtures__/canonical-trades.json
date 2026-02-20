@@ -1,0 +1,18 @@
+{
+  "trades": [
+    {
+      "id": "trade-1",
+      "agentId": "agent-1",
+      "chainId": 10143,
+      "executionChain": "monad-testnet",
+      "status": "confirmed",
+      "tokenIn": "ETH",
+      "tokenOut": "USDT",
+      "amountIn": "0.01",
+      "amountOut": "28.7",
+      "executionTxHash": "0xabc",
+      "kiteAttestationTx": "0xdef",
+      "createdAt": "2026-02-20T00:00:20.000Z"
+    }
+  ]
+}

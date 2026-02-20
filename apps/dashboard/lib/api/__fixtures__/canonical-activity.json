@@ -1,0 +1,13 @@
+{
+  "events": [
+    {
+      "id": "event-1",
+      "agentId": "agent-1",
+      "eventType": "trade.swap_confirmed",
+      "chain": "monad-testnet",
+      "txHash": "0xabc",
+      "data": { "orderId": "trade-1" },
+      "createdAt": "2026-02-20T00:00:25.000Z"
+    }
+  ]
+}
