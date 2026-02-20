@@ -2,15 +2,17 @@ import {
   RealAttestationAdapter,
   RealTradingAdapter,
   MomentumStrategy,
-  RebalanceStrategy
+  RebalanceStrategy,
+  MONAD_TESTNET_CHAIN_ID,
+  WMON,
+  USDC_MONAD
 } from "@synoptic/agent-core";
 import type { ActivityEvent, Trade } from "@synoptic/types";
 import type { RuntimeStoreContract } from "../state/runtime-store.js";
 import type { AgentTickRunner } from "./agent-loop.js";
 
-const SEPOLIA_CHAIN_ID = 11155111;
-const DEFAULT_TOKEN_IN = "0x0000000000000000000000000000000000000000";
-const DEFAULT_TOKEN_OUT = "0x1111111111111111111111111111111111111111";
+const DEFAULT_TOKEN_IN = WMON;
+const DEFAULT_TOKEN_OUT = USDC_MONAD;
 const DEFAULT_AMOUNT_IN = "1";
 
 async function priceWindowForStrategy(
@@ -30,22 +32,22 @@ async function priceWindowForStrategy(
 export function createDefaultTickRunner(input: {
   store: RuntimeStoreContract;
   privateKey: string;
-  sepoliaRpcUrl: string;
+  executionRpcUrl: string;
   kiteRpcUrl: string;
   uniswapApiKey: string;
-  tradeRegistryAddress: string;
+  registryAddress: string;
   onTrade?: (trade: Trade) => void;
   onActivity?: (event: ActivityEvent) => void;
 }): AgentTickRunner {
   const trading = new RealTradingAdapter({
     privateKey: input.privateKey,
-    sepoliaRpcUrl: input.sepoliaRpcUrl,
+    executionRpcUrl: input.executionRpcUrl,
     uniswapApiKey: input.uniswapApiKey
   });
   const attestation = new RealAttestationAdapter({
     privateKey: input.privateKey,
     kiteRpcUrl: input.kiteRpcUrl,
-    tradeRegistryAddress: input.tradeRegistryAddress
+    serviceRegistryAddress: input.registryAddress
   });
   const momentum = new MomentumStrategy();
   const rebalance = new RebalanceStrategy();
@@ -58,7 +60,7 @@ export function createDefaultTickRunner(input: {
 
     const strategy = agent.strategy === "rebalance" ? rebalance : momentum;
     const signal = strategy.evaluate({ prices: await priceWindowForStrategy(input.store, "ETH/USDT") });
-    const signalEvent = await input.store.addActivity(agentId, "strategy.signal", "sepolia", {
+    const signalEvent = await input.store.addActivity(agentId, "strategy.signal", "monad-testnet", {
       strategy: agent.strategy ?? "momentum",
       action: signal.action,
       reason: signal.reason
@@ -66,7 +68,7 @@ export function createDefaultTickRunner(input: {
     input.onActivity?.(signalEvent);
 
     if (signal.action === "hold") {
-      const holdEvent = await input.store.addActivity(agentId, "trade.skipped", "sepolia", {
+      const holdEvent = await input.store.addActivity(agentId, "trade.skipped", "monad-testnet", {
         reason: signal.reason
       });
       input.onActivity?.(holdEvent);
@@ -75,7 +77,7 @@ export function createDefaultTickRunner(input: {
 
     const trade = await input.store.createTrade({
       agentId,
-      chainId: SEPOLIA_CHAIN_ID,
+      chainId: MONAD_TESTNET_CHAIN_ID,
       tokenIn: DEFAULT_TOKEN_IN,
       tokenOut: DEFAULT_TOKEN_OUT,
       amountIn: DEFAULT_AMOUNT_IN,
@@ -97,9 +99,9 @@ export function createDefaultTickRunner(input: {
         walletAddress: agent.eoaAddress,
         token: DEFAULT_TOKEN_IN,
         amount: DEFAULT_AMOUNT_IN,
-        chainId: SEPOLIA_CHAIN_ID
+        chainId: MONAD_TESTNET_CHAIN_ID
       });
-      const approvalActivity = await input.store.addActivity(agentId, "trade.approval_checked", "sepolia", {
+      const approvalActivity = await input.store.addActivity(agentId, "trade.approval_checked", "monad-testnet", {
         tradeId: currentTrade.id,
         approvalRequestId: approval.approvalRequestId ?? "",
         needsApproval: approval.needsApproval
@@ -117,10 +119,10 @@ export function createDefaultTickRunner(input: {
         tokenIn: DEFAULT_TOKEN_IN,
         tokenOut: DEFAULT_TOKEN_OUT,
         amountIn: DEFAULT_AMOUNT_IN,
-        chainId: SEPOLIA_CHAIN_ID,
+        chainId: MONAD_TESTNET_CHAIN_ID,
         swapper: agent.eoaAddress
       });
-      const quoteActivity = await input.store.addActivity(agentId, "trade.quote_received", "sepolia", {
+      const quoteActivity = await input.store.addActivity(agentId, "trade.quote_received", "monad-testnet", {
         tradeId: currentTrade.id,
         approvalRequestId: approval.approvalRequestId ?? "",
         quoteRequestId: String(quote.quoteResponse.requestId ?? ""),
@@ -135,13 +137,13 @@ export function createDefaultTickRunner(input: {
 
       const swap = await trading.executeSwap({ quoteResponse: quote.quoteResponse });
       const broadcast = await input.store.updateTradeStatus(currentTrade.id, "broadcast", {
-        sepoliaTxHash: swap.txHash
+        executionTxHash: swap.txHash
       });
       if (!broadcast) throw new Error(`trade_not_found:${currentTrade.id}`);
       currentTrade = broadcast;
       input.onTrade?.(currentTrade);
 
-      const broadcastEvent = await input.store.addActivity(agentId, "trade.swap_broadcast", "sepolia", {
+      const broadcastEvent = await input.store.addActivity(agentId, "trade.swap_broadcast", "monad-testnet", {
         tradeId: currentTrade.id,
         approvalRequestId: approval.approvalRequestId ?? "",
         quoteRequestId: swap.quoteRequestId ?? String(quote.quoteResponse.requestId ?? ""),
@@ -151,13 +153,13 @@ export function createDefaultTickRunner(input: {
       input.onActivity?.(broadcastEvent);
 
       const confirmed = await input.store.updateTradeStatus(currentTrade.id, "confirmed", {
-        sepoliaTxHash: swap.txHash
+        executionTxHash: swap.txHash
       });
       if (!confirmed) throw new Error(`trade_not_found:${currentTrade.id}`);
       currentTrade = confirmed;
       input.onTrade?.(currentTrade);
 
-      const confirmedEvent = await input.store.addActivity(agentId, "trade.swap_confirmed", "sepolia", {
+      const confirmedEvent = await input.store.addActivity(agentId, "trade.swap_confirmed", "monad-testnet", {
         tradeId: currentTrade.id,
         approvalRequestId: approval.approvalRequestId ?? "",
         quoteRequestId: swap.quoteRequestId ?? String(quote.quoteResponse.requestId ?? ""),
@@ -167,7 +169,7 @@ export function createDefaultTickRunner(input: {
       input.onActivity?.(confirmedEvent);
 
       const attested = await attestation.recordTrade({
-        sourceChainId: SEPOLIA_CHAIN_ID,
+        sourceChainId: MONAD_TESTNET_CHAIN_ID,
         sourceTxHash: swap.txHash,
         tokenIn: DEFAULT_TOKEN_IN,
         tokenOut: DEFAULT_TOKEN_OUT,
@@ -176,7 +178,7 @@ export function createDefaultTickRunner(input: {
         strategyReason: signal.reason
       });
       const attestedTrade = await input.store.updateTradeStatus(currentTrade.id, "confirmed", {
-        sepoliaTxHash: swap.txHash,
+        executionTxHash: swap.txHash,
         kiteAttestationTx: attested.attestationTxHash
       });
       if (!attestedTrade) throw new Error(`trade_not_found:${currentTrade.id}`);
@@ -197,7 +199,7 @@ export function createDefaultTickRunner(input: {
         errorMessage: message
       });
       if (failed) input.onTrade?.(failed);
-      const failedEvent = await input.store.addActivity(agentId, "trade.failed", "sepolia", {
+      const failedEvent = await input.store.addActivity(agentId, "trade.failed", "monad-testnet", {
         tradeId: currentTrade.id,
         message
       });

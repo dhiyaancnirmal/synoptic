@@ -16,14 +16,12 @@ export interface AgentServerEnv {
   executionRpcUrl: string;
   executionExplorerUrl: string;
   executionChainName: string;
-  /**
-   * @deprecated Use executionRpcUrl.
-   */
-  sepoliaRpcUrl: string;
   kiteRpcUrl: string;
   uniswapApiKey: string;
-  tradeRegistryAddress: string;
+  registryAddress: string;
   quicknodeSecurityToken: string;
+  monadUsdcAddress: string;
+  monadUsdtAddress: string;
 }
 
 function readNumber(value: string | undefined, fallback: number): number {
@@ -35,10 +33,12 @@ export function loadEnv(): AgentServerEnv {
   const executionRpcUrl =
     process.env.EXECUTION_RPC_URL ??
     process.env.EXECUTION_CHAIN_RPC_URL ??
-    process.env.SEPOLIA_RPC_URL ??
-    process.env.SEPOLIA_RPC ??
+    process.env.MONAD_RPC_URL ??
     "";
-  const executionChainId = readNumber(process.env.EXECUTION_CHAIN_ID ?? process.env.SEPOLIA_CHAIN_ID, 11155111);
+  const executionChainId = readNumber(
+    process.env.EXECUTION_CHAIN_ID ?? process.env.MONAD_CHAIN_ID,
+    10143
+  );
 
   return {
     port: readNumber(process.env.PORT, 3001),
@@ -67,17 +67,21 @@ export function loadEnv(): AgentServerEnv {
     executionExplorerUrl:
       process.env.EXECUTION_EXPLORER_URL ??
       process.env.NEXT_PUBLIC_EXECUTION_EXPLORER_URL ??
-      process.env.NEXT_PUBLIC_SEPOLIA_EXPLORER_URL ??
-      "https://sepolia.etherscan.io",
-    executionChainName: process.env.EXECUTION_CHAIN_NAME ?? process.env.EXECUTION_NETWORK ?? "sepolia",
-    sepoliaRpcUrl: executionRpcUrl,
+      process.env.NEXT_PUBLIC_MONAD_EXPLORER_URL ??
+      "https://testnet.monadexplorer.com",
+    executionChainName:
+      process.env.EXECUTION_CHAIN_NAME ?? process.env.EXECUTION_NETWORK ?? "monad-testnet",
     kiteRpcUrl: process.env.KITE_RPC_URL ?? process.env.KITE_TESTNET_RPC ?? "",
     uniswapApiKey: process.env.UNISWAP_API_KEY ?? "",
-    tradeRegistryAddress: process.env.TRADE_REGISTRY_ADDRESS ?? "",
+    registryAddress:
+      process.env.SERVICE_REGISTRY_ADDRESS ?? process.env.TRADE_REGISTRY_ADDRESS ?? "",
     quicknodeSecurityToken:
       process.env.QUICKNODE_SECURITY_TOKEN ??
       process.env.QUICKNODE_STREAM_SECURITY_TOKEN ??
       process.env.QUICKNODE_STREAM_TOKEN ??
-      ""
+      "",
+    monadUsdcAddress:
+      process.env.MONAD_USDC_ADDRESS ?? "0x62534e4bbd6d9ebac0ac99aeaa0aa48e56372df0",
+    monadUsdtAddress: process.env.MONAD_USDT_ADDRESS ?? ""
   };
 }

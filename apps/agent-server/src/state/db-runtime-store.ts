@@ -80,7 +80,6 @@ export class DbRuntimeStore implements RuntimeStoreContract {
     status: "quoting" | "approving" | "signing" | "broadcast" | "confirmed" | "reverted" | "failed",
     details?: {
       executionTxHash?: string;
-      sepoliaTxHash?: string;
       kiteAttestationTx?: string;
       errorMessage?: string;
       gasUsed?: string;
@@ -211,16 +210,16 @@ export class DbRuntimeStore implements RuntimeStoreContract {
 
     await this.repos.tradeRepo.create({
       agentId: input.agentId,
-      chainId: 11155111,
-      tokenIn: "0x0000000000000000000000000000000000000000",
-      tokenOut: "0x1111111111111111111111111111111111111111",
+      chainId: 10143,
+      tokenIn: "0x760afe86e5de5fa0ee542fc7b7b713e1c5425701",
+      tokenOut: "0x62534e4bbd6d9ebac0ac99aeaa0aa48e56372df0",
       amountIn: input.size,
       amountOut: input.size,
       routingType: "BEST_PRICE",
       status: "confirmed",
       strategyReason: "compat.execute"
     });
-    await this.addActivity(input.agentId, "trade.executed", "sepolia", { orderId });
+    await this.addActivity(input.agentId, "trade.executed", "monad-testnet", { orderId });
     return order;
   }
 }

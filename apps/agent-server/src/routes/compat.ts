@@ -16,12 +16,12 @@ export async function registerCompatRoutes(
   sessionAuth: SessionAuth
 ): Promise<void> {
   function getTradingAdapter() {
-    if (!env.agentPrivateKey || !env.sepoliaRpcUrl || !env.uniswapApiKey) {
+    if (!env.agentPrivateKey || !env.executionRpcUrl || !env.uniswapApiKey) {
       return undefined;
     }
     return new RealTradingAdapter({
       privateKey: env.agentPrivateKey,
-      sepoliaRpcUrl: env.sepoliaRpcUrl,
+      executionRpcUrl: env.executionRpcUrl,
       uniswapApiKey: env.uniswapApiKey
     });
   }
@@ -138,7 +138,7 @@ export async function registerCompatRoutes(
     if (!tradingAdapter) {
       reply.status(503).send({
         code: "TRADING_NOT_CONFIGURED",
-        message: "Set AGENT_PRIVATE_KEY, SEPOLIA_RPC_URL, and UNISWAP_API_KEY",
+        message: "Set AGENT_PRIVATE_KEY, EXECUTION_RPC_URL, and UNISWAP_API_KEY",
         requestId: request.id
       });
       return;
@@ -162,13 +162,13 @@ export async function registerCompatRoutes(
       walletAddress: agent.eoaAddress,
       token: "0x0000000000000000000000000000000000000000",
       amount: size,
-      chainId: 11155111
+      chainId: env.executionChainId
     });
     const quoteResult = await tradingAdapter.quote({
       tokenIn: "0x0000000000000000000000000000000000000000",
       tokenOut: "0x1111111111111111111111111111111111111111",
       amountIn: size,
-      chainId: 11155111,
+      chainId: env.executionChainId,
       swapper: agent.eoaAddress
     });
 
@@ -185,7 +185,7 @@ export async function registerCompatRoutes(
     if (!tradingAdapter) {
       reply.status(503).send({
         code: "TRADING_NOT_CONFIGURED",
-        message: "Set AGENT_PRIVATE_KEY, SEPOLIA_RPC_URL, and UNISWAP_API_KEY",
+        message: "Set AGENT_PRIVATE_KEY, EXECUTION_RPC_URL, and UNISWAP_API_KEY",
         requestId: request.id
       });
       return;
@@ -211,18 +211,18 @@ export async function registerCompatRoutes(
       walletAddress: agent.eoaAddress,
       token: "0x0000000000000000000000000000000000000000",
       amount: size,
-      chainId: 11155111
+      chainId: env.executionChainId
     });
     const quote = await tradingAdapter.quote({
       tokenIn: "0x0000000000000000000000000000000000000000",
       tokenOut: "0x1111111111111111111111111111111111111111",
       amountIn: size,
-      chainId: 11155111,
+      chainId: env.executionChainId,
       swapper: agent.eoaAddress
     });
     const swap = await tradingAdapter.executeSwap({ quoteResponse: quote.quoteResponse });
     const order = await store.createCompatOrder({ agentId, side, size, marketId });
-    const event = await store.addActivity(agentId, "trade.executed", "sepolia", {
+    const event = await store.addActivity(agentId, "trade.executed", env.executionChainName, {
       orderId: order.orderId,
       approvalRequestId: approval.approvalRequestId ?? "",
       quoteRequestId: swap.quoteRequestId ?? String(quote.quoteResponse.requestId ?? ""),

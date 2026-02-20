@@ -3,11 +3,13 @@ import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";
 import type { FastifyInstance } from "fastify";
 import { registerAgentRoutes } from "./routes/agents.js";
+import { registerHoldingsRoutes } from "./routes/holdings.js";
 import { registerTradeRoutes } from "./routes/trades.js";
 import { registerPaymentRoutes } from "./routes/payments.js";
 import { registerActivityRoutes } from "./routes/activity.js";
 import { registerCompatRoutes } from "./routes/compat.js";
 import { registerQuickNodeWebhookRoutes } from "./routes/quicknode.js";
+import { registerTradeExecutionRoutes } from "./routes/trade-execution.js";
 import { registerOracleRoutes } from "./oracle/server.js";
 import { sendEvent } from "./ws/handler.js";
 import { WsHub } from "./ws/hub.js";
@@ -52,23 +54,23 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   const wsHub = new WsHub();
   const canRunRealTick =
     Boolean(env.agentPrivateKey) &&
-    Boolean(env.sepoliaRpcUrl) &&
+    Boolean(env.executionRpcUrl) &&
     Boolean(env.kiteRpcUrl) &&
     Boolean(env.uniswapApiKey) &&
-    Boolean(env.tradeRegistryAddress);
+    Boolean(env.registryAddress);
   const tickRunner =
     options.tickRunner ??
     (canRunRealTick
       ? createDefaultTickRunner({
-        store,
-        sepoliaRpcUrl: env.sepoliaRpcUrl,
-        kiteRpcUrl: env.kiteRpcUrl,
-        privateKey: env.agentPrivateKey,
-        uniswapApiKey: env.uniswapApiKey,
-        tradeRegistryAddress: env.tradeRegistryAddress,
-        onTrade: (trade) => wsHub.broadcast({ type: "trade.update", trade }),
-        onActivity: (event) => wsHub.broadcast({ type: "activity.new", event })
-      })
+          store,
+          executionRpcUrl: env.executionRpcUrl,
+          kiteRpcUrl: env.kiteRpcUrl,
+          privateKey: env.agentPrivateKey,
+          uniswapApiKey: env.uniswapApiKey,
+          registryAddress: env.registryAddress,
+          onTrade: (trade) => wsHub.broadcast({ type: "trade.update", trade }),
+          onActivity: (event) => wsHub.broadcast({ type: "activity.new", event })
+        })
       : undefined);
   const orchestrator = new Orchestrator({
     store,
@@ -84,7 +86,8 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     }
   });
   const existingAgents = await store.listAgents();
-  const bootstrap = existingAgents[0] ?? (await store.createAgent({ name: "Bootstrap Agent", status: "idle" }));
+  const bootstrap =
+    existingAgents[0] ?? (await store.createAgent({ name: "Bootstrap Agent", status: "idle" }));
 
   await app.register(cors, {
     methods: ["GET", "POST", "PATCH", "OPTIONS"],
@@ -100,9 +103,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     origin(origin, cb) {
       if (!origin) return cb(null, true);
       const normalized = origin.replace(/\/$/, "");
-      const allowed = new Set([
-        env.dashboardUrl.replace(/\/$/, "")
-      ]);
+      const allowed = new Set([env.dashboardUrl.replace(/\/$/, "")]);
       cb(null, allowed.has(normalized) || isLocalDevOrigin(normalized));
     }
   });
@@ -114,14 +115,17 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     "/ws",
     "/auth/siwe/challenge",
     "/auth/siwe/verify",
-    "/webhooks/quicknode/monad"
+    "/webhooks/quicknode/monad",
+    "/trade/quote",
+    "/trade/execute"
   ]);
   app.addHook("onRequest", async (request, reply) => {
     if (request.method === "OPTIONS") return;
     if (publicPaths.has(request.url.split("?")[0] ?? request.url)) return;
 
     const header = request.headers.authorization;
-    const token = typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+    const token =
+      typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7).trim() : "";
     if (!token || !sessionAuth.verifySession(token)) {
       reply.status(401).send({
         code: "UNAUTHORIZED",
@@ -165,6 +169,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   });
 
   await registerAgentRoutes(app, store, orchestrator, wsHub);
+  await registerHoldingsRoutes(app, store);
   await registerTradeRoutes(app, store);
   await registerPaymentRoutes(app, store);
   await registerActivityRoutes(app, store);
@@ -182,6 +187,16 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     network: env.kiteNetwork,
     payToAddress: env.kiteServicePayTo,
     paymentAssetAddress: env.kiteTestUsdtAddress
+  });
+  await registerTradeExecutionRoutes(app, {
+    store,
+    wsHub,
+    env,
+    facilitatorUrl: env.kiteFacilitatorUrl,
+    network: env.kiteNetwork,
+    payToAddress: env.kiteServicePayTo,
+    paymentAssetAddress: env.kiteTestUsdtAddress,
+    budgetResetTimeZone: env.budgetResetTimeZone
   });
 
   return app;

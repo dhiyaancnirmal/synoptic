@@ -52,7 +52,6 @@ export interface RuntimeStoreContract {
     status: Trade["status"],
     details?: {
       executionTxHash?: string;
-      sepoliaTxHash?: string;
       kiteAttestationTx?: string;
       errorMessage?: string;
       gasUsed?: string;
@@ -205,7 +204,6 @@ export class RuntimeStore implements RuntimeStoreContract {
     status: Trade["status"],
     details?: {
       executionTxHash?: string;
-      sepoliaTxHash?: string;
       kiteAttestationTx?: string;
       errorMessage?: string;
       gasUsed?: string;
@@ -216,8 +214,7 @@ export class RuntimeStore implements RuntimeStoreContract {
     const updated: Trade = {
       ...existing,
       status,
-      executionTxHash: details?.executionTxHash ?? details?.sepoliaTxHash ?? existing.executionTxHash ?? existing.sepoliaTxHash,
-      sepoliaTxHash: details?.executionTxHash ?? details?.sepoliaTxHash ?? existing.executionTxHash ?? existing.sepoliaTxHash,
+      executionTxHash: details?.executionTxHash ?? existing.executionTxHash,
       kiteAttestationTx: details?.kiteAttestationTx ?? existing.kiteAttestationTx,
       confirmedAt: status === "confirmed" ? new Date().toISOString() : existing.confirmedAt
     };
@@ -368,7 +365,7 @@ export class RuntimeStore implements RuntimeStoreContract {
       updatedAt: now
     };
     this.orders.set(order.orderId, order);
-    await this.addActivity(input.agentId, "trade.executed", "sepolia", { orderId: order.orderId });
+    await this.addActivity(input.agentId, "trade.executed", "monad-testnet", { orderId: order.orderId });
     return order;
   }
 
