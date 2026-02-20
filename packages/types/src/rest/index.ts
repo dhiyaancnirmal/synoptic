@@ -3,16 +3,26 @@ import type { SynopticEventEnvelope } from "../events/index.js";
 import type { OrderRecord, OrderSide, VenueType } from "../orders/index.js";
 import type { PaymentRequirement, PaymentSettlement } from "../payments/index.js";
 
+export type PaymentProviderMode = "http";
+export type AuthMode = "passport" | "siwe" | "dev";
+export type TradingMode = "bridge_to_base_v1";
+export type UniswapExecutionMode = "direct" | "api" | "api_fallback";
+export type MarketRoute = "UNISWAP_V3";
+export type ExecutionPath = "BASE_SEPOLIA_UNISWAP_V3";
+
 export interface HealthResponse {
   status: string;
   service: string;
   timestamp: string;
   dependencies?: {
     database: "up" | "down";
-    paymentProviderMode: "mock" | "http";
-    facilitatorMode?: "mock" | "http";
-    authMode?: "siwe" | "dev";
-    tradingMode?: "bridge_to_base_v1";
+    paymentProviderMode: PaymentProviderMode;
+    facilitatorMode?: PaymentProviderMode;
+    authMode?: AuthMode;
+    tradingMode?: TradingMode;
+    uniswapExecutionMode?: UniswapExecutionMode;
+    uniswapApiConfigured?: boolean;
+    uniswapApiBaseUrl?: string;
   };
 }
 
@@ -67,6 +77,19 @@ export interface SiweVerifyResponse {
   token: string;
 }
 
+export interface PassportTokenExchangeRequest {
+  passportToken: string;
+  agentId?: string;
+  ownerAddress?: string;
+  scopes?: string[];
+}
+
+export interface PassportTokenExchangeResponse {
+  token: string;
+  ownerAddress: string;
+  subject?: string;
+}
+
 export interface CreateAgentRequest {
   ownerAddress: string;
 }
@@ -105,10 +128,15 @@ export interface MarketQuoteResponse {
   notional: string;
   fee: string;
   expiresAt: string;
-  route: "UNISWAP_V3";
+  route: MarketRoute;
   poolAddress?: string;
   priceImpactBps?: number;
   liquidityCheck: "PASS" | "FAIL";
+  executionSource: ExecutionSource;
+  uniswap?: {
+    quoteRequestId?: string;
+    routing?: string;
+  };
 }
 
 export interface MarketExecuteRequest {
@@ -124,7 +152,19 @@ export interface MarketExecuteRequest {
 export interface MarketExecuteResponse {
   order: OrderRecord;
   settlement: PaymentSettlement;
-  executionPath: "BASE_SEPOLIA_UNISWAP_V3";
+  executionPath: ExecutionPath;
+  executionSource: ExecutionSource;
+  evidence?: {
+    idempotencyKey: string;
+    quoteId: string;
+    orderId: string;
+    settlementId: string;
+  };
+  uniswap?: {
+    quoteRequestId?: string;
+    swapRequestId?: string;
+    routing?: string;
+  };
   bridge?: {
     required: boolean;
     sourceTxHash?: string;
@@ -147,6 +187,8 @@ export interface MarketExecuteResponse {
     | "UNSUPPORTED_MARKET"
     | "SLIPPAGE_EXCEEDED";
 }
+
+export type ExecutionSource = "UNISWAP_API" | "DIRECT_VIEM";
 
 export interface GetOrderResponse {
   order: OrderRecord;
@@ -178,4 +220,22 @@ export interface ShopifyCatalogSearchResponse {
 
 export interface ShopifyProductDetailsResponse {
   data: unknown;
+}
+
+export interface CommerceCatalogSearchRequest {
+  query: string;
+  available_for_sale?: boolean;
+  min_price?: number;
+  max_price?: number;
+  products_limit?: number;
+}
+
+export interface CommerceCatalogSearchResponse {
+  data: unknown;
+  settlement: PaymentSettlement;
+}
+
+export interface CommerceProductDetailsResponse {
+  data: unknown;
+  settlement: PaymentSettlement;
 }

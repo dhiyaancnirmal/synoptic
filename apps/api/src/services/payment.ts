@@ -11,6 +11,8 @@ export interface DecodedPayment {
   network: string;
   payer: string;
   txHash?: string;
+  authorization: Record<string, unknown>;
+  raw: Record<string, unknown>;
 }
 
 export interface VerifyPaymentResult {
@@ -44,31 +46,6 @@ export interface PaymentService {
   }): Promise<PaymentSettlement>;
 }
 
-class MockPaymentProvider implements PaymentProvider {
-  async verify(payment: DecodedPayment, requirement: PaymentRequirement): Promise<VerifyPaymentResult> {
-    const amount = Number(payment.amount);
-    const expected = Number(requirement.amount);
-
-    if (!payment.signature.startsWith("sig_") || Number.isNaN(amount) || amount < expected) {
-      return { verified: false };
-    }
-
-    return { verified: true, providerRef: `mock-verify-${payment.paymentId}` };
-  }
-
-  async settle(payment: DecodedPayment): Promise<SettlePaymentResult> {
-    if (payment.signature.includes("settle_fail")) {
-      return { settled: false };
-    }
-
-    return {
-      settled: true,
-      txHash: payment.txHash ?? `0x${payment.paymentId.padEnd(64, "0").slice(0, 64)}`,
-      providerRef: `mock-settle-${payment.paymentId}`
-    };
-  }
-}
-
 class HttpPaymentProvider implements PaymentProvider {
   constructor(
     private readonly facilitatorUrl: string,
@@ -78,11 +55,12 @@ class HttpPaymentProvider implements PaymentProvider {
   ) {}
 
   async verify(payment: DecodedPayment, requirement: PaymentRequirement): Promise<VerifyPaymentResult> {
+    void requirement;
     try {
       const response = await fetchWithTimeout(buildFacilitatorEndpoint(this.facilitatorUrl, this.verifyPath), this.timeoutMs, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ payment, requirement })
+        body: JSON.stringify(buildHttpProviderPayload(payment))
       });
 
       if (!response.ok) {
@@ -100,11 +78,12 @@ class HttpPaymentProvider implements PaymentProvider {
   }
 
   async settle(payment: DecodedPayment, requirement: PaymentRequirement): Promise<SettlePaymentResult> {
+    void requirement;
     try {
       const response = await fetchWithTimeout(buildFacilitatorEndpoint(this.facilitatorUrl, this.settlePath), this.timeoutMs, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ payment, requirement })
+        body: JSON.stringify(buildHttpProviderPayload(payment))
       });
 
       if (!response.ok) {
@@ -123,7 +102,7 @@ class HttpPaymentProvider implements PaymentProvider {
 }
 
 export interface PaymentServiceConfig {
-  mode: "mock" | "http";
+  mode: "http";
   facilitatorUrl: string;
   verifyPath?: string;
   settlePath?: string;
@@ -141,7 +120,7 @@ export interface PaymentServiceConfig {
 export function createPaymentService(config: PaymentServiceConfig, provider?: PaymentProvider): PaymentService {
   const paymentProvider =
     provider ??
-    createPaymentProvider(config.mode, config.facilitatorUrl, config.timeoutMs ?? 3000, {
+    createPaymentProvider(config.facilitatorUrl, config.timeoutMs ?? 3000, {
       verifyPath: config.verifyPath,
       settlePath: config.settlePath
     });
@@ -223,24 +202,19 @@ export function createPaymentService(config: PaymentServiceConfig, provider?: Pa
 }
 
 export function createPaymentProvider(
-  mode: "mock" | "http",
   facilitatorUrl: string,
   timeoutMs: number,
   paths: { verifyPath?: string; settlePath?: string } = {}
 ): PaymentProvider {
-  if (mode === "mock") {
-    return new MockPaymentProvider();
-  }
-
   if (!/^https?:\/\//.test(facilitatorUrl)) {
-    throw new Error("FACILITATOR_URL must be an http(s) URL when PAYMENT_MODE=http");
+    throw new Error("FACILITATOR_URL must be an http(s) URL");
   }
 
   return new HttpPaymentProvider(
     facilitatorUrl,
     timeoutMs,
-    normalizeFacilitatorPath(paths.verifyPath ?? "/verify"),
-    normalizeFacilitatorPath(paths.settlePath ?? "/settle")
+    normalizeFacilitatorPath(paths.verifyPath ?? "/v2/verify"),
+    normalizeFacilitatorPath(paths.settlePath ?? "/v2/settle")
   );
 }
 
@@ -288,11 +262,66 @@ function buildFacilitatorEndpoint(baseUrl: string, path: string): string {
 }
 
 export function decodePaymentHeader(value: string): DecodedPayment {
+  const parsed = parsePaymentHeaderPayload(value);
+  const signature = readString(parsed, ["signature"]);
+  const authorization = readRecord(parsed, ["authorization"]);
+
+  if (!signature || !authorization) {
+    throw new ApiError("INVALID_PAYMENT", 402, "X-PAYMENT must include authorization and signature");
+  }
+
+  const paymentId = extractFirstString(
+    authorization.nonce,
+    authorization.authorizationId,
+    parsed.paymentId,
+    parsed.id
+  );
+  const amount = extractFirstString(
+    authorization.amount,
+    authorization.value,
+    parsed.amount
+  );
+  const asset = extractFirstString(
+    authorization.token,
+    authorization.tokenAddress,
+    authorization.token_type,
+    parsed.asset
+  );
+  const payer = extractFirstString(
+    authorization.payer,
+    authorization.from,
+    authorization.payer_addr,
+    parsed.payer
+  );
+  const network = extractFirstString(
+    parsed.network,
+    authorization.network,
+    authorization.chain,
+    "kite-testnet"
+  );
+
+  if (!paymentId || !amount || !asset || !payer || !network) {
+    throw new ApiError("INVALID_PAYMENT", 402, "X-PAYMENT authorization is missing required fields");
+  }
+
+  return {
+    paymentId,
+    signature,
+    amount,
+    asset,
+    network,
+    payer,
+    txHash: extractFirstString(parsed.txHash, parsed.tx_hash),
+    authorization,
+    raw: parsed
+  };
+}
+
+function parsePaymentHeaderPayload(value: string): Record<string, unknown> {
   let parsed: unknown;
 
   try {
-    const decodedRaw = Buffer.from(value, "base64url").toString("utf-8");
-    parsed = JSON.parse(decodedRaw);
+    parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf-8"));
   } catch {
     try {
       parsed = JSON.parse(value);
@@ -301,26 +330,50 @@ export function decodePaymentHeader(value: string): DecodedPayment {
     }
   }
 
-  if (!isDecodedPayment(parsed)) {
+  if (!isRecord(parsed)) {
     throw new ApiError("INVALID_PAYMENT", 402, "X-PAYMENT header has invalid shape");
   }
 
   return parsed;
 }
 
-function isDecodedPayment(value: unknown): value is DecodedPayment {
-  if (!value || typeof value !== "object") {
-    return false;
+function buildHttpProviderPayload(payment: DecodedPayment): Record<string, unknown> {
+  return {
+    authorization: payment.authorization,
+    signature: payment.signature,
+    network: payment.network
+  };
+}
+
+function readString(record: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
   }
+  return undefined;
+}
 
-  const candidate = value as Record<string, unknown>;
+function readRecord(record: Record<string, unknown>, keys: string[]): Record<string, unknown> | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (isRecord(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
 
-  return (
-    typeof candidate.paymentId === "string" &&
-    typeof candidate.signature === "string" &&
-    typeof candidate.amount === "string" &&
-    typeof candidate.asset === "string" &&
-    typeof candidate.network === "string" &&
-    typeof candidate.payer === "string"
-  );
+function extractFirstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
 }

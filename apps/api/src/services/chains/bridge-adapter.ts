@@ -45,7 +45,7 @@ export interface BridgeAdapter {
   }): Promise<BridgeConfirmation>;
 }
 
-class MockBridgeAdapter implements BridgeAdapter {
+class SimulatedBridgeAdapter implements BridgeAdapter {
   async estimate(): Promise<BridgeEstimate> {
     return { fee: 0n };
   }
@@ -189,8 +189,12 @@ class LiveBridgeAdapter implements BridgeAdapter {
 }
 
 export function createBridgeAdapter(config: ApiConfig): BridgeAdapter {
-  if (config.NODE_ENV === "test" || !config.SERVER_SIGNER_PRIVATE_KEY || !config.KITE_BRIDGE_ROUTER) {
-    return new MockBridgeAdapter();
+  if (config.NODE_ENV === "test") {
+    return new SimulatedBridgeAdapter();
+  }
+
+  if (!config.SERVER_SIGNER_PRIVATE_KEY || !config.KITE_BRIDGE_ROUTER) {
+    throw new Error("SERVER_SIGNER_PRIVATE_KEY and KITE_BRIDGE_ROUTER are required for live bridge execution");
   }
 
   return new LiveBridgeAdapter(config);

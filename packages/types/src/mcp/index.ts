@@ -34,14 +34,25 @@ export interface McpMarketListInput {
 }
 
 export interface McpMarketListOutput {
-  markets: Array<{ marketId: string; venueType: VenueType; baseAsset: string; quoteAsset: string }>;
+  markets: Array<{
+    marketId: string;
+    venueType: VenueType;
+    baseAsset: string;
+    quoteAsset: string;
+    mode?: "LIVE";
+    engine?: string;
+  }>;
   catalog?: unknown;
 }
 
-export type McpTradeQuoteInput = MarketQuoteRequest;
+export interface McpTradeQuoteInput extends MarketQuoteRequest {
+  xPayment?: string;
+}
 export type McpTradeQuoteOutput = MarketQuoteResponse;
 
-export type McpTradeExecuteInput = MarketExecuteRequest;
+export interface McpTradeExecuteInput extends MarketExecuteRequest {
+  xPayment?: string;
+}
 export type McpTradeExecuteOutput = MarketExecuteResponse;
 
 export interface McpOrderStatusInput {

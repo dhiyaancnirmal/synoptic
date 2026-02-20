@@ -30,7 +30,8 @@ export async function buildQuote(input: MarketQuoteRequest, config: QuoteService
     fee: fee.toFixed(2),
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     route: "UNISWAP_V3",
-    liquidityCheck: "PASS"
+    liquidityCheck: "PASS",
+    executionSource: "DIRECT_VIEM"
   };
 }
 

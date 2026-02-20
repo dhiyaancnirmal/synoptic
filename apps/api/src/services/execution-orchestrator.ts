@@ -15,6 +15,8 @@ const V3_FEE = 3000;
 export interface ExecutionResult {
   bridge: NonNullable<MarketExecuteResponse["bridge"]>;
   swap: NonNullable<MarketExecuteResponse["swap"]>;
+  executionSource: NonNullable<MarketExecuteResponse["executionSource"]>;
+  uniswap?: NonNullable<MarketExecuteResponse["uniswap"]>;
   failureCode?: NonNullable<MarketExecuteResponse["failureCode"]>;
   rejectionReason?: OrderRejectionReason;
 }
@@ -36,6 +38,7 @@ export function createExecutionOrchestrator(
 
   return {
     async quote(input) {
+      assertSpotVenue(input.venueType);
       assertSupportedMarket(input.marketId);
       if (input.side !== "BUY") {
         throw new ApiError("VALIDATION_ERROR", 400, "Only BUY side is supported in V1", {
@@ -49,8 +52,9 @@ export function createExecutionOrchestrator(
       const liquidity = await uniswapAdapter.checkPoolLiquidity({ tokenIn, tokenOut, fee: V3_FEE });
 
       if (!liquidity.ok || !liquidity.poolAddress) {
-        throw new ApiError("LIQUIDITY_UNAVAILABLE", 422, "Uniswap v3 pool has insufficient liquidity", {
+        throw new ApiError("LIQUIDITY_UNAVAILABLE", 422, "Kite-native swap liquidity is insufficient; route uses Kite->Base bridge", {
           reason: "LIQUIDITY_UNAVAILABLE",
+          routePolicy: "KITE_TO_BASE_UNISWAP_V3",
           retryable: false
         });
       }
@@ -80,13 +84,19 @@ export function createExecutionOrchestrator(
         route: "UNISWAP_V3",
         poolAddress: quote.poolAddress,
         priceImpactBps: quote.priceImpactBps,
-        liquidityCheck: "PASS"
+        liquidityCheck: "PASS",
+        executionSource: quote.source,
+        uniswap: {
+          quoteRequestId: quote.quoteRequestId,
+          routing: quote.routing
+        }
       };
     },
 
     async execute(input, idempotencyKey) {
-      assertSupportedMarket(input.marketId);
+      assertSpotVenue(input.venueType);
       const quote = await this.quote(input);
+      assertSupportedMarket(input.marketId);
       const amountIn = parseTradeSize(input.size);
 
       const intent = await context.prisma.executionIntent.upsert({
@@ -155,7 +165,8 @@ export function createExecutionOrchestrator(
             metadata: {
               intentId: intent.intentId,
               sourceTxHash,
-              amount: bridgeAmount.toString()
+              amount: bridgeAmount.toString(),
+              bridgeTimeoutMs: context.config.BRIDGE_TIMEOUT_MS
             }
           });
 
@@ -184,7 +195,8 @@ export function createExecutionOrchestrator(
               metadata: {
                 intentId: intent.intentId,
                 reason: "BRIDGE_TIMEOUT",
-                sourceTxHash
+                sourceTxHash,
+                bridgeTimeoutMs: context.config.BRIDGE_TIMEOUT_MS
               }
             });
 
@@ -197,6 +209,8 @@ export function createExecutionOrchestrator(
               swap: {
                 status: "FAILED"
               },
+              executionSource: quote.executionSource,
+              uniswap: quote.uniswap,
               failureCode: "BRIDGE_TIMEOUT",
               rejectionReason: "BRIDGE_TIMEOUT"
             };
@@ -220,7 +234,8 @@ export function createExecutionOrchestrator(
               metadata: {
                 intentId: intent.intentId,
                 reason: failureCode,
-                sourceTxHash
+                sourceTxHash,
+                bridgeTimeoutMs: context.config.BRIDGE_TIMEOUT_MS
               }
             });
 
@@ -233,6 +248,8 @@ export function createExecutionOrchestrator(
               swap: {
                 status: "FAILED"
               },
+              executionSource: quote.executionSource,
+              uniswap: quote.uniswap,
               failureCode,
               rejectionReason: "BRIDGE_FAILED"
             };
@@ -276,7 +293,8 @@ export function createExecutionOrchestrator(
             metadata: {
               intentId: intent.intentId,
               reason: failureCode,
-              error: error instanceof Error ? error.message : "unknown"
+              error: error instanceof Error ? error.message : "unknown",
+              bridgeTimeoutMs: context.config.BRIDGE_TIMEOUT_MS
             }
           });
 
@@ -288,6 +306,8 @@ export function createExecutionOrchestrator(
             swap: {
               status: "FAILED"
             },
+            executionSource: quote.executionSource,
+            uniswap: quote.uniswap,
             failureCode,
             rejectionReason: "BRIDGE_FAILED"
           };
@@ -307,7 +327,9 @@ export function createExecutionOrchestrator(
         status: "INFO",
         metadata: {
           intentId: intent.intentId,
-          bridgeRequired
+          bridgeRequired,
+          executionSource: quote.executionSource,
+          uniswapQuoteRequestId: quote.uniswap?.quoteRequestId
         }
       });
 
@@ -338,7 +360,11 @@ export function createExecutionOrchestrator(
             intentId: intent.intentId,
             txHash: swap.txHash,
             amountIn: swap.amountIn.toString(),
-            amountOut: swap.amountOut.toString()
+            amountOut: swap.amountOut.toString(),
+            executionSource: swap.source,
+            uniswapQuoteRequestId: swap.quoteRequestId,
+            uniswapSwapRequestId: swap.swapRequestId,
+            uniswapRouting: swap.routing
           }
         });
 
@@ -354,6 +380,12 @@ export function createExecutionOrchestrator(
             status: "CONFIRMED",
             amountIn: formatUnits(swap.amountIn, 18),
             amountOut: formatUnits(swap.amountOut, 18)
+          },
+          executionSource: swap.source,
+          uniswap: {
+            quoteRequestId: swap.quoteRequestId ?? quote.uniswap?.quoteRequestId,
+            swapRequestId: swap.swapRequestId,
+            routing: swap.routing ?? quote.uniswap?.routing
           }
         };
       } catch (error) {
@@ -374,7 +406,9 @@ export function createExecutionOrchestrator(
           metadata: {
             intentId: intent.intentId,
             reason: failureCode,
-            error: error instanceof Error ? error.message : "unknown"
+            error: error instanceof Error ? error.message : "unknown",
+            executionSource: quote.executionSource,
+            uniswapQuoteRequestId: quote.uniswap?.quoteRequestId
           }
         });
 
@@ -388,6 +422,8 @@ export function createExecutionOrchestrator(
           swap: {
             status: "FAILED"
           },
+          executionSource: quote.executionSource,
+          uniswap: quote.uniswap,
           failureCode,
           rejectionReason: "SWAP_REVERTED"
         };
@@ -406,6 +442,15 @@ function parseTradeSize(size: string): bigint {
   }
 
   return parseUnits(size, 18);
+}
+
+function assertSpotVenue(venueType: MarketQuoteRequest["venueType"] | MarketExecuteRequest["venueType"]): asserts venueType is "SPOT" {
+  if (venueType !== "SPOT") {
+    throw new ApiError("VALIDATION_ERROR", 400, `Unsupported venue for spot flow: ${venueType}`, {
+      reason: "UNSUPPORTED_VENUE",
+      retryable: false
+    });
+  }
 }
 
 function resolvePair(context: ApiContext, side: "BUY" | "SELL"): { tokenIn: Address; tokenOut: Address } {

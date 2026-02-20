@@ -45,6 +45,10 @@ if (!hasDatabase) {
     BASE_UNISWAP_V3_FACTORY: "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24",
     BASE_UNISWAP_V3_ROUTER: "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4",
     BASE_UNISWAP_QUOTER_V2: "0xC5290058841028F1614F3A6F0F5816cAd0df5E27",
+    UNISWAP_API_BASE_URL: "https://trade-api.gateway.uniswap.org/v1",
+    UNISWAP_API_KEY: undefined,
+    UNISWAP_API_CHAIN_ID: 84532,
+    UNISWAP_EXECUTION_MODE: "api_fallback",
     KITE_BRIDGE_ROUTER: "0x7777777777777777777777777777777777777777",
     KITE_TOKEN_ON_BASE: "0xFB9a6AF5C014c32414b4a6e208a89904c6dAe266",
     BUSDT_TOKEN_ON_BASE: "0xdAD5b9eB32831D54b7f2D8c92ef4E2A68008989C",
@@ -56,12 +60,15 @@ if (!hasDatabase) {
     SWAP_DEADLINE_SECONDS: 300,
     SETTLEMENT_TOKEN_ADDRESS: "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
     JWT_SECRET: "integration-secret-12345",
+    PASSPORT_VERIFY_URL: undefined,
+    PASSPORT_API_KEY: undefined,
+    PASSPORT_VERIFY_TIMEOUT_MS: 4000,
     SHOPIFY_TIMEOUT_MS: 5000,
-    PAYMENT_MODE: "mock",
-    FACILITATOR_URL: "mock://facilitator",
+    PAYMENT_MODE: "http",
+    FACILITATOR_URL: "https://facilitator.example",
     FACILITATOR_TIMEOUT_MS: 100,
-    FACILITATOR_VERIFY_PATH: "/verify",
-    FACILITATOR_SETTLE_PATH: "/settle",
+    FACILITATOR_VERIFY_PATH: "/v2/verify",
+    FACILITATOR_SETTLE_PATH: "/v2/settle",
     PAYMENT_RETRY_ATTEMPTS: 2,
     X402_PAY_TO: "synoptic-facilitator",
     X402_PRICE_USD: "0.10",
@@ -76,7 +83,7 @@ if (!hasDatabase) {
     metrics: createInMemoryMetrics(),
     paymentService: createPaymentService({
       mode: baseConfig.PAYMENT_MODE,
-      facilitatorUrl: baseConfig.FACILITATOR_URL ?? "mock://facilitator",
+      facilitatorUrl: baseConfig.FACILITATOR_URL,
       verifyPath: baseConfig.FACILITATOR_VERIFY_PATH,
       settlePath: baseConfig.FACILITATOR_SETTLE_PATH,
       network: String(baseConfig.KITE_CHAIN_ID),
@@ -85,6 +92,13 @@ if (!hasDatabase) {
       payTo: baseConfig.X402_PAY_TO,
       timeoutMs: baseConfig.FACILITATOR_TIMEOUT_MS,
       retries: baseConfig.PAYMENT_RETRY_ATTEMPTS
+    }, {
+      async verify() {
+        return { verified: true };
+      },
+      async settle() {
+        return { settled: true, txHash: `0x${"1".repeat(64)}` };
+      }
     }),
     shopifyCatalogService: createShopifyCatalogService(baseConfig)
   });
@@ -101,8 +115,8 @@ if (!hasDatabase) {
     paymentService: createPaymentService({
       mode: "http",
       facilitatorUrl: "http://127.0.0.1:9",
-      verifyPath: "/verify",
-      settlePath: "/settle",
+      verifyPath: "/v2/verify",
+      settlePath: "/v2/settle",
       network: String(baseConfig.KITE_CHAIN_ID),
       asset: baseConfig.SETTLEMENT_TOKEN_ADDRESS,
       amount: baseConfig.X402_PRICE_USD,
@@ -123,10 +137,13 @@ if (!hasDatabase) {
   function paymentHeader(signature = `sig_${randomUUID()}`): string {
     return Buffer.from(
       JSON.stringify({
-        paymentId: randomUUID(),
+        authorization: {
+          nonce: randomUUID(),
+          amount: baseConfig.X402_PRICE_USD,
+          tokenAddress: baseConfig.SETTLEMENT_TOKEN_ADDRESS,
+          from: "integration-test"
+        },
         signature,
-        amount: baseConfig.X402_PRICE_USD,
-        asset: baseConfig.SETTLEMENT_TOKEN_ADDRESS,
         network: String(baseConfig.KITE_CHAIN_ID),
         payer: "integration-test"
       }),
@@ -181,6 +198,15 @@ if (!hasDatabase) {
     assert.equal(detail.body.agent.agentId, agentId);
   });
 
+  test("health reports uniswap mode and api readiness", async () => {
+    const response = await request(app).get("/health").expect(200);
+
+    assert.equal(response.body.status, "ok");
+    assert.equal(response.body.dependencies.uniswapExecutionMode, baseConfig.UNISWAP_EXECUTION_MODE);
+    assert.equal(response.body.dependencies.uniswapApiConfigured, false);
+    assert.equal(response.body.dependencies.uniswapApiBaseUrl, baseConfig.UNISWAP_API_BASE_URL);
+  });
+
   test("quote and execute happy path persist order + settlement + events", async () => {
     const quote = await request(app)
       .post("/markets/quote")
@@ -212,9 +238,14 @@ if (!hasDatabase) {
 
     assert.equal(execute.body.order.status, "EXECUTED");
     assert.equal(execute.body.settlement.status, "SETTLED");
+    assert.equal(typeof execute.body.executionSource, "string");
 
     const events = await request(app).get(`/events?agentId=${encodeURIComponent(agentId)}`).set(bearer()).expect(200);
     assert.equal(events.body.events.length > 0, true);
+    const executedEvent = events.body.events.find(
+      (event: { eventName: string }) => event.eventName === "trade.executed"
+    ) as { metadata?: { executionSource?: string } } | undefined;
+    assert.equal(typeof executedEvent?.metadata?.executionSource, "string");
   });
 
   test("execute rejection paths for insufficient funds and risk limit", async () => {

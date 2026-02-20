@@ -17,6 +17,10 @@ const config: ApiConfig = {
   BASE_UNISWAP_V3_FACTORY: "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24",
   BASE_UNISWAP_V3_ROUTER: "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4",
   BASE_UNISWAP_QUOTER_V2: "0xC5290058841028F1614F3A6F0F5816cAd0df5E27",
+  UNISWAP_API_BASE_URL: "https://trade-api.gateway.uniswap.org/v1",
+  UNISWAP_API_KEY: undefined,
+  UNISWAP_API_CHAIN_ID: 84532,
+  UNISWAP_EXECUTION_MODE: "api_fallback",
   KITE_BRIDGE_ROUTER: "0x7777777777777777777777777777777777777777",
   KITE_TOKEN_ON_BASE: "0xFB9a6AF5C014c32414b4a6e208a89904c6dAe266",
   BUSDT_TOKEN_ON_BASE: "0xdAD5b9eB32831D54b7f2D8c92ef4E2A68008989C",
@@ -28,15 +32,18 @@ const config: ApiConfig = {
   SWAP_DEADLINE_SECONDS: 300,
   SETTLEMENT_TOKEN_ADDRESS: "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
   JWT_SECRET: "test-secret-123456",
+  PASSPORT_VERIFY_URL: undefined,
+  PASSPORT_API_KEY: undefined,
+  PASSPORT_VERIFY_TIMEOUT_MS: 4000,
   SHOPIFY_API_KEY: undefined,
   SHOPIFY_CLIENT_ID: undefined,
   SHOPIFY_CLIENT_SECRET: undefined,
   SHOPIFY_TIMEOUT_MS: 5000,
-  PAYMENT_MODE: "mock",
-  FACILITATOR_URL: "mock://facilitator",
+  PAYMENT_MODE: "http",
+  FACILITATOR_URL: "https://facilitator.example",
   FACILITATOR_TIMEOUT_MS: 3000,
-  FACILITATOR_VERIFY_PATH: "/verify",
-  FACILITATOR_SETTLE_PATH: "/settle",
+  FACILITATOR_VERIFY_PATH: "/v2/verify",
+  FACILITATOR_SETTLE_PATH: "/v2/settle",
   PAYMENT_RETRY_ATTEMPTS: 3,
   X402_PAY_TO: "synoptic-facilitator",
   X402_PRICE_USD: "0.10",
@@ -45,7 +52,7 @@ const config: ApiConfig = {
   SYNOPTIC_MARKETPLACE_ADDRESS: undefined
 };
 
-test("mock bridge adapter submits and confirms", async () => {
+test("bridge adapter in test runtime submits and confirms", async () => {
   const adapter = createBridgeAdapter(config);
   const submitted = await adapter.submitBridge({
     amount: 1_000_000_000_000_000_000n,

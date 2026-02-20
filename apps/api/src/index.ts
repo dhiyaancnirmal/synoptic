@@ -35,10 +35,19 @@ async function main(): Promise<void> {
   if (config.AUTH_MODE === "dev") {
     logger.warn("AUTH_MODE=dev is enabled. SIWE signatures are not being verified.");
   }
+  if (config.AUTH_MODE === "passport") {
+    logger.info(
+      {
+        passportVerifyUrl: config.PASSPORT_VERIFY_URL,
+        passportApiKeyConfigured: Boolean(config.PASSPORT_API_KEY)
+      },
+      "AUTH_MODE=passport enabled"
+    );
+  }
 
   const paymentService = createPaymentService({
     mode: config.PAYMENT_MODE,
-    facilitatorUrl: config.FACILITATOR_URL ?? "mock://facilitator",
+    facilitatorUrl: config.FACILITATOR_URL,
     verifyPath: config.FACILITATOR_VERIFY_PATH,
     settlePath: config.FACILITATOR_SETTLE_PATH,
     network: String(config.KITE_CHAIN_ID),

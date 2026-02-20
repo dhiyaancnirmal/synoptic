@@ -233,8 +233,24 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
         riskRejection === null
           ? await execution.execute(parsed.data, idemKey)
           : {
-              bridge: { required: false, status: "SKIPPED" as const },
-              swap: { status: "FAILED" as const },
+              bridge: {
+                required: false,
+                sourceTxHash: undefined,
+                destinationTxHash: undefined,
+                status: "SKIPPED" as const
+              },
+              swap: {
+                txHash: undefined,
+                status: "FAILED" as const,
+                amountIn: undefined,
+                amountOut: undefined
+              },
+              executionSource: quote.executionSource,
+              uniswap: {
+                quoteRequestId: quote.uniswap?.quoteRequestId,
+                swapRequestId: undefined,
+                routing: quote.uniswap?.routing
+              },
               failureCode: "RISK_LIMIT" as const,
               rejectionReason: riskRejection
             };
@@ -262,8 +278,14 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
           status: "ERROR",
           metadata: {
             orderId: order.orderId,
+            settlementId: settlement.settlementId,
+            quoteId: quote.quoteId,
+            idempotencyKey: idemKey,
             reason: rejectionReason,
-            failureCode: executionResult.failureCode
+            failureCode: executionResult.failureCode,
+            executionSource: executionResult.executionSource,
+            uniswapQuoteRequestId: executionResult.uniswap?.quoteRequestId,
+            uniswapSwapRequestId: executionResult.uniswap?.swapRequestId
           }
         });
       } else {
@@ -275,9 +297,14 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
           metadata: {
             orderId: order.orderId,
             settlementId: settlement.settlementId,
+            quoteId: quote.quoteId,
+            idempotencyKey: idemKey,
             swapTxHash: executionResult.swap.txHash,
             bridgeSourceTxHash: executionResult.bridge.sourceTxHash,
-            bridgeDestinationTxHash: executionResult.bridge.destinationTxHash
+            bridgeDestinationTxHash: executionResult.bridge.destinationTxHash,
+            executionSource: executionResult.executionSource,
+            uniswapQuoteRequestId: executionResult.uniswap?.quoteRequestId,
+            uniswapSwapRequestId: executionResult.uniswap?.swapRequestId
           }
         });
       }
@@ -286,17 +313,26 @@ export function registerMarketsRoutes(app: Express, context: ApiContext): void {
         order: mapOrder(order),
         settlement,
         executionPath: "BASE_SEPOLIA_UNISWAP_V3",
+        executionSource: executionResult.executionSource,
+        evidence: {
+          idempotencyKey: idemKey,
+          quoteId: quote.quoteId,
+          orderId: order.orderId,
+          settlementId: settlement.settlementId
+        },
+        uniswap: executionResult.uniswap,
         bridge: executionResult.bridge,
         swap: executionResult.swap,
         failureCode: executionResult.failureCode
       };
 
-      await context.prisma.idempotencyKey.create({
+      // Prisma Json type may reference InputJsonValue not exported in some build environments
+      await (context.prisma as any).idempotencyKey.create({
         data: {
           key: idemKey,
           route: "/markets/execute",
           requestHash: requestHash(req.body),
-          responseJson: response as unknown as Prisma.InputJsonValue,
+          responseJson: response,
           expiresAt: new Date(Date.now() + 60 * 60 * 1000)
         }
       });

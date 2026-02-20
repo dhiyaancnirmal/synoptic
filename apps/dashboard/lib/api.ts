@@ -7,6 +7,8 @@ import type {
   HealthResponse,
   ListAgentsResponse,
   ListEventsResponse,
+  MarketExecuteResponse,
+  MarketQuoteResponse,
   ShopifyCatalogSearchResponse,
   SiweVerifyResponse
 } from "@synoptic/types/rest";
@@ -30,6 +32,20 @@ export interface CatalogProductView {
   price?: string;
   imageUrl?: string;
   vendor?: string;
+}
+
+export interface DemoTradeRunResponse {
+  quote: MarketQuoteResponse;
+  execution: MarketExecuteResponse;
+  evidence: {
+    quoteId: string;
+    orderId: string;
+    settlementId: string;
+    executionSource: string;
+    swapTxHash?: string;
+    bridgeSourceTxHash?: string;
+    bridgeDestinationTxHash?: string;
+  };
 }
 
 function resolveToken(explicit?: string): string {
@@ -132,7 +148,11 @@ export async function ensureDashboardToken(): Promise<string> {
   if (typeof window !== "undefined") {
     const existing = window.localStorage.getItem("synoptic.dashboard.token");
     if (existing) {
-      return existing;
+      const valid = await validateToken(existing);
+      if (valid) {
+        return existing;
+      }
+      window.localStorage.removeItem("synoptic.dashboard.token");
     }
   }
 
@@ -146,6 +166,13 @@ export async function ensureDashboardToken(): Promise<string> {
   }
 
   const health = await fetchHealth();
+  if (health.dependencies?.authMode === "passport") {
+    throw new DashboardApiError(
+      "Dashboard bootstrap is disabled in AUTH_MODE=passport. Set NEXT_PUBLIC_API_TOKEN or SYNOPTIC_API_TOKEN.",
+      401
+    );
+  }
+
   if (health.dependencies?.authMode !== "dev") {
     throw new DashboardApiError("Dashboard bootstrap token flow is disabled when AUTH_MODE is not dev.", 401);
   }
@@ -167,6 +194,18 @@ export async function ensureDashboardToken(): Promise<string> {
   return verify.token;
 }
 
+async function validateToken(token: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/agents`, {
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      cache: "no-store"
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function searchCatalog(query: string, token?: string): Promise<CatalogProductView[]> {
   const payload = await apiRequest<ShopifyCatalogSearchResponse>(
     "/shopify/catalog/search",
@@ -178,6 +217,33 @@ export async function searchCatalog(query: string, token?: string): Promise<Cata
   );
 
   return normalizeCatalogProducts(payload.data);
+}
+
+export async function runDemoSpotTrade(input: {
+  agentId: string;
+  token?: string;
+  size?: string;
+  limitPrice?: string;
+  xPayment?: string;
+}): Promise<DemoTradeRunResponse> {
+  const response = await fetch("/api/demo/trade", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+    cache: "no-store"
+  });
+
+  const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+
+  if (!response.ok) {
+    const message =
+      typeof payload.message === "string"
+        ? payload.message
+        : `Demo trade request failed ${response.status}`;
+    throw new DashboardApiError(message, response.status);
+  }
+
+  return payload as unknown as DemoTradeRunResponse;
 }
 
 function normalizeCatalogProducts(data: unknown): CatalogProductView[] {

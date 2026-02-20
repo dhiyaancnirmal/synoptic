@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AgentRecord } from "@synoptic/types/agent";
 import type { OrderRecord, OrderRejectionReason } from "@synoptic/types/orders";
 import type { SynopticEventEnvelope } from "@synoptic/types/events";
-import type { HealthResponse } from "@synoptic/types/rest";
-import type { CatalogProductView } from "@/lib/api";
+import type { ExecutionSource, HealthResponse } from "@synoptic/types/rest";
+import type { CatalogProductView, DemoTradeRunResponse } from "@/lib/api";
 import {
   decodeAgentIdFromToken,
   ensureDashboardToken,
@@ -13,6 +13,7 @@ import {
   fetchEvents,
   fetchHealth,
   fetchOrder,
+  runDemoSpotTrade,
   searchCatalog
 } from "@/lib/api";
 import { AgentsTable } from "./AgentsTable";
@@ -96,6 +97,12 @@ function mapFeed(
     const route = typeof metadata.route === "string" ? metadata.route : "N/A";
     const settlementId = typeof metadata.settlementId === "string" ? metadata.settlementId : "N/A";
     const txHash = typeof metadata.txHash === "string" ? metadata.txHash : undefined;
+    const executionSourceRaw = typeof metadata.executionSource === "string" ? metadata.executionSource : undefined;
+    const executionSource = isExecutionSource(executionSourceRaw) ? executionSourceRaw : undefined;
+    const uniswapQuoteRequestId =
+      typeof metadata.uniswapQuoteRequestId === "string" ? metadata.uniswapQuoteRequestId : undefined;
+    const uniswapSwapRequestId =
+      typeof metadata.uniswapSwapRequestId === "string" ? metadata.uniswapSwapRequestId : undefined;
 
     let domain: FeedFilter = "all";
     if (event.eventName.startsWith("x402.")) {
@@ -114,6 +121,7 @@ function mapFeed(
     const detail = [
       route !== "N/A" ? `route ${route}` : "",
       settlementId !== "N/A" ? `settlement ${settlementId}` : "",
+      executionSource ? `source ${executionSource}` : "",
       reason ? `reason ${reason}` : ""
     ]
       .filter(Boolean)
@@ -132,7 +140,10 @@ function mapFeed(
       orderId,
       route,
       settlementId: settlementId !== "N/A" ? settlementId : undefined,
-      txHash
+      txHash,
+      executionSource,
+      uniswapQuoteRequestId,
+      uniswapSwapRequestId
     };
   });
 }
@@ -235,6 +246,21 @@ function isRejectionReason(value: string | undefined): value is OrderRejectionRe
   );
 }
 
+function isExecutionSource(value: string | undefined): value is ExecutionSource {
+  return value === "UNISWAP_API" || value === "DIRECT_VIEM";
+}
+
+function buildApiHealthLabel(health: HealthResponse | null, apiHealth: string): string {
+  if (!health?.dependencies) {
+    return apiHealth;
+  }
+
+  const uniswapMode = health.dependencies.uniswapExecutionMode ?? "unknown";
+  const uniswapApi = health.dependencies.uniswapApiConfigured ? "ready" : "no-key";
+
+  return `${apiHealth} / db:${health.dependencies.database} / pay:${health.dependencies.paymentProviderMode} / uni:${uniswapMode}:${uniswapApi}`;
+}
+
 export function DashboardClient({ explorerUrl }: DashboardClientProps) {
   const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
   const [feedFilter, setFeedFilter] = useState<FeedFilter>("all");
@@ -244,92 +270,86 @@ export function DashboardClient({ explorerUrl }: DashboardClientProps) {
   const [catalogProducts, setCatalogProducts] = useState<CatalogProductView[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | undefined>(undefined);
+  const [demoBusy, setDemoBusy] = useState(false);
+  const [demoError, setDemoError] = useState<string | undefined>(undefined);
+  const [demoEvidence, setDemoEvidence] = useState<DemoTradeRunResponse["evidence"] | undefined>(undefined);
   const [token, setToken] = useState("");
   const [panel, setPanel] = useState<PanelMeta>({ state: "loading" });
   const [data, setData] = useState<DashboardDataModel>(initialData);
+  const apiHealthLabel = useMemo(() => buildApiHealthLabel(health, apiHealth), [health, apiHealth]);
+  const apiState: "ok" | "warn" = apiHealth === "ok" ? "ok" : "warn";
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setPanel({ state: "loading" });
-      try {
-        const dashboardToken = await ensureDashboardToken();
-        if (!cancelled) {
-          setToken(dashboardToken);
-        }
-        const tokenAgentId = decodeAgentIdFromToken(dashboardToken);
+  const loadDashboard = useCallback(async () => {
+    setPanel({ state: "loading" });
+    try {
+      const dashboardToken = await ensureDashboardToken();
+      setToken(dashboardToken);
+      const tokenAgentId = decodeAgentIdFromToken(dashboardToken);
 
-        const healthResponse = await fetchHealth();
-        if (!cancelled) {
-          setHealth(healthResponse);
-          setApiHealth(healthResponse.status === "ok" ? "ok" : healthResponse.status);
-        }
+      const healthResponse = await fetchHealth();
+      setHealth(healthResponse);
+      setApiHealth(healthResponse.status === "ok" ? "ok" : healthResponse.status);
 
-        const agents = await fetchAgents(dashboardToken);
-        const events = tokenAgentId ? await fetchEvents(tokenAgentId, dashboardToken) : [];
+      const agents = await fetchAgents(dashboardToken);
+      const events = tokenAgentId ? await fetchEvents(tokenAgentId, dashboardToken) : [];
 
-        const orderIds = Array.from(
-          new Set(
-            events
-              .map((event) => {
-                const value = event.metadata?.orderId;
-                return typeof value === "string" ? value : null;
-              })
-              .filter((value): value is string => Boolean(value))
-          )
-        );
+      const orderIds = Array.from(
+        new Set(
+          events
+            .map((event) => {
+              const value = event.metadata?.orderId;
+              return typeof value === "string" ? value : null;
+            })
+            .filter((value): value is string => Boolean(value))
+        )
+      );
 
-        const orderEntries = await Promise.allSettled(
-          orderIds.map(async (orderId) => {
-            const order = await fetchOrder(orderId, dashboardToken);
-            return [orderId, order] as const;
-          })
-        );
+      const orderEntries = await Promise.allSettled(
+        orderIds.map(async (orderId) => {
+          const order = await fetchOrder(orderId, dashboardToken);
+          return [orderId, order] as const;
+        })
+      );
 
-        const ordersById: Record<string, OrderRecord> = {};
-        for (const entry of orderEntries) {
-          if (entry.status === "fulfilled") {
-            ordersById[entry.value[0]] = entry.value[1];
-          }
-        }
-
-        const feed = mapFeed(events, ordersById);
-        const paymentRows = mapPayments(events);
-        const failures = buildFailures(feed);
-        const kpis = buildKpis(agents, feed, paymentRows);
-
-        if (cancelled) return;
-
-        setData({
-          agents,
-          events: feed,
-          ordersById,
-          paymentRows,
-          failures,
-          kpis
-        });
-
-        if (agents.length > 0) {
-          setSelectedAgent((existing) => existing ?? agents[0].agentId);
-        }
-
-        if (agents.length === 0 && feed.length === 0) {
-          setPanel({ state: "empty", message: "No API data returned for dashboard panels." });
-        } else {
-          setPanel({ state: "ready" });
-        }
-      } catch (error) {
-        if (!cancelled) {
-          const message = error instanceof Error ? error.message : "Unknown API failure";
-          setPanel({ state: "error", message });
+      const ordersById: Record<string, OrderRecord> = {};
+      for (const entry of orderEntries) {
+        if (entry.status === "fulfilled") {
+          ordersById[entry.value[0]] = entry.value[1];
         }
       }
+
+      const feed = mapFeed(events, ordersById);
+      const paymentRows = mapPayments(events);
+      const failures = buildFailures(feed);
+      const kpis = buildKpis(agents, feed, paymentRows);
+
+      setData({
+        agents,
+        events: feed,
+        ordersById,
+        paymentRows,
+        failures,
+        kpis
+      });
+
+      if (agents.length > 0) {
+        setSelectedAgent((existing) => existing ?? agents[0].agentId);
+      }
+
+      if (agents.length === 0 && feed.length === 0) {
+        setPanel({ state: "empty", message: "No API data returned for dashboard panels." });
+      } else {
+        setPanel({ state: "ready" });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown API failure";
+      setPanel({ state: "error", message });
     }
-    void load();
-    return () => {
-      cancelled = true;
-    };
   }, []);
+
+  useEffect(() => {
+    void loadDashboard();
+  }, [loadDashboard]);
 
   const orders = useMemo(
     () => Object.values(data.ordersById).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
@@ -359,6 +379,29 @@ export function DashboardClient({ explorerUrl }: DashboardClientProps) {
     void runCatalogSearch("running shoes");
   }, [token, runCatalogSearch]);
 
+  const handleRunDemoTrade = useCallback(async (): Promise<void> => {
+    if (!selectedAgent) {
+      setDemoError("Select an active agent first.");
+      return;
+    }
+
+    setDemoBusy(true);
+    setDemoError(undefined);
+    try {
+      const result = await runDemoSpotTrade({
+        agentId: selectedAgent,
+        token
+      });
+      setDemoEvidence(result.evidence);
+      await loadDashboard();
+    } catch (error) {
+      setDemoEvidence(undefined);
+      setDemoError(error instanceof Error ? error.message : "Demo trade failed");
+    } finally {
+      setDemoBusy(false);
+    }
+  }, [loadDashboard, selectedAgent, token]);
+
   if (panel.state === "loading") {
     return (
       <PanelState
@@ -384,7 +427,7 @@ export function DashboardClient({ explorerUrl }: DashboardClientProps) {
   if (panel.state === "empty") {
     return (
       <div className="dash-shell">
-        <SidebarNav activeTab={activeTab} onChange={setActiveTab} apiHealth={apiHealth} />
+        <SidebarNav activeTab={activeTab} onChange={setActiveTab} apiHealthLabel={apiHealthLabel} apiState={apiState} />
         <main className="dash-main">
           <PanelState
             state="empty"
@@ -400,15 +443,7 @@ export function DashboardClient({ explorerUrl }: DashboardClientProps) {
 
   return (
     <div className="dash-shell">
-      <SidebarNav
-        activeTab={activeTab}
-        onChange={setActiveTab}
-        apiHealth={
-          health?.dependencies
-            ? `${apiHealth} / db:${health.dependencies.database} / pay:${health.dependencies.paymentProviderMode}`
-            : apiHealth
-        }
-      />
+      <SidebarNav activeTab={activeTab} onChange={setActiveTab} apiHealthLabel={apiHealthLabel} apiState={apiState} />
       <main className="dash-main">
         {activeTab === "overview" ? (
           <>
@@ -437,7 +472,22 @@ export function DashboardClient({ explorerUrl }: DashboardClientProps) {
         {activeTab === "payments" ? (
           <PaymentsTable rows={data.paymentRows} explorerUrl={explorerUrl} />
         ) : null}
-        {activeTab === "trading" ? <TradingPanel orders={orders} /> : null}
+        {activeTab === "trading" ? (
+          <TradingPanel
+            orders={orders}
+            events={data.events}
+            healthDependencies={health?.dependencies}
+            runningDemo={demoBusy}
+            demoError={demoError}
+            demoEvidence={demoEvidence}
+            onRunDemoTrade={() => {
+              void handleRunDemoTrade();
+            }}
+            onRefresh={() => {
+              void loadDashboard();
+            }}
+          />
+        ) : null}
         {activeTab === "commerce" ? (
           <CatalogPanel
             products={catalogProducts}

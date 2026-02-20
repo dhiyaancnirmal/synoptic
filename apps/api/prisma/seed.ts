@@ -57,7 +57,7 @@ async function main(): Promise<void> {
       agentId: dashAgent.agentId,
       status: "SETTLED",
       txHash: "0xaabbccdd11223344556677889900aabbccdd11223344556677889900aabbccdd",
-      providerRef: "mock-ref-001"
+      providerRef: "facilitator-ref-001"
     }
   });
 
@@ -69,7 +69,7 @@ async function main(): Promise<void> {
       agentId: dashAgent.agentId,
       status: "SETTLED",
       txHash: "0x1122334455667788990011223344556677889900aabbccddeeff001122334455",
-      providerRef: "mock-ref-002"
+      providerRef: "facilitator-ref-002"
     }
   });
 
@@ -80,7 +80,7 @@ async function main(): Promise<void> {
       settlementId: "settle-seed-003",
       agentId: dashAgent.agentId,
       status: "FAILED",
-      providerRef: "mock-ref-003"
+      providerRef: "facilitator-ref-003"
     }
   });
 

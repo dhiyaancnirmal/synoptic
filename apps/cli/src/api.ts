@@ -1,8 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
-import { buildPaymentHeader } from "@synoptic/types/payments";
+import { createHash } from "node:crypto";
 import type {
   CreateAgentResponse,
-  HealthResponse,
   ListAgentsResponse,
   ListEventsResponse,
   MarketExecuteRequest,
@@ -10,16 +8,17 @@ import type {
   MarketQuoteRequest,
   MarketQuoteResponse
 } from "@synoptic/types/rest";
+import { resolveXPayment } from "./x402.js";
 
 const API_URL = process.env.SYNOPTIC_API_URL ?? "http://localhost:3001";
-const API_TOKEN = process.env.SYNOPTIC_API_TOKEN ?? "";
+let cachedApiToken: string | undefined;
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   headers.set("content-type", "application/json");
-
-  if (API_TOKEN) {
-    headers.set("authorization", `Bearer ${API_TOKEN}`);
+  const token = await resolveApiToken();
+  if (token) {
+    headers.set("authorization", `Bearer ${token}`);
   }
 
   const response = await fetch(`${API_URL}${path}`, {
@@ -47,24 +46,40 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-async function getPaymentMode(): Promise<"mock" | "http"> {
-  try {
-    const health = await apiRequest<HealthResponse>("/health");
-    return health.dependencies?.paymentProviderMode ?? "mock";
-  } catch {
-    return "mock";
+async function resolveApiToken(): Promise<string> {
+  if (cachedApiToken) {
+    return cachedApiToken;
   }
-}
 
-function buildPaymentHeaderForMode(mode: "mock" | "http", payer: string): string {
-  return buildPaymentHeader({
-    paymentId: randomUUID(),
-    signature: mode === "mock" ? `sig_${randomUUID()}` : `http_sig_${randomUUID()}`,
-    amount: process.env.X402_PRICE_USD ?? "0.10",
-    asset: process.env.SETTLEMENT_TOKEN_ADDRESS ?? "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
-    network: process.env.KITE_CHAIN_ID ?? "2368",
-    payer
+  const staticToken = process.env.SYNOPTIC_API_TOKEN;
+  if (typeof staticToken === "string" && staticToken.trim().length > 0) {
+    cachedApiToken = staticToken;
+    return staticToken;
+  }
+
+  const passportToken = process.env.SYNOPTIC_PASSPORT_TOKEN;
+  const agentId = process.env.SYNOPTIC_AGENT_ID;
+  const ownerAddress = process.env.SYNOPTIC_OWNER_ADDRESS;
+  if (!passportToken || !agentId || !ownerAddress) {
+    return "";
+  }
+
+  const response = await fetch(`${API_URL}/auth/passport/exchange`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ passportToken, agentId, ownerAddress })
   });
+  if (!response.ok) {
+    throw new Error(`Passport token exchange failed: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { token?: string };
+  if (!payload.token) {
+    throw new Error("Passport token exchange did not return token");
+  }
+
+  cachedApiToken = payload.token;
+  return payload.token;
 }
 
 export async function createAgent(ownerAddress: string): Promise<CreateAgentResponse> {
@@ -85,6 +100,7 @@ export async function monitorAgent(agentId: string): Promise<ListEventsResponse>
 export interface StrategyExecutionRequest {
   agentId: string;
   strategy: string;
+  xPayment?: string;
 }
 
 export interface StrategyExecutionResult {
@@ -94,7 +110,10 @@ export interface StrategyExecutionResult {
 
 export async function executeStrategyOnce(input: StrategyExecutionRequest): Promise<StrategyExecutionResult> {
   const orderInput = mapStrategyToOrderInput(input.strategy);
-  const paymentMode = await getPaymentMode();
+  const quotePayment = await resolveXPayment(
+    { agentId: input.agentId, route: "/markets/quote" },
+    input.xPayment
+  );
 
   const quoteRequest: MarketQuoteRequest = {
     agentId: input.agentId,
@@ -104,7 +123,7 @@ export async function executeStrategyOnce(input: StrategyExecutionRequest): Prom
   const quote = await apiRequest<MarketQuoteResponse>("/markets/quote", {
     method: "POST",
     headers: {
-      "x-payment": buildPaymentHeaderForMode(paymentMode, "synoptic-cli")
+      "x-payment": quotePayment
     },
     body: JSON.stringify(quoteRequest)
   });
@@ -115,10 +134,14 @@ export async function executeStrategyOnce(input: StrategyExecutionRequest): Prom
     ...orderInput
   };
 
+  const executePayment = await resolveXPayment(
+    { agentId: input.agentId, route: "/markets/execute" },
+    input.xPayment
+  );
   const execution = await apiRequest<MarketExecuteResponse>("/markets/execute", {
     method: "POST",
     headers: {
-      "x-payment": buildPaymentHeaderForMode(paymentMode, "synoptic-cli"),
+      "x-payment": executePayment,
       "idempotency-key": deriveExecutionIdempotencyKey(executeRequest)
     },
     body: JSON.stringify(executeRequest)

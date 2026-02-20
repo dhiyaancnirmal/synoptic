@@ -20,7 +20,7 @@ Use Synoptic MCP tools with strict V1 trading policy:
 - Always verify identity status before quote/execute.
 - Fail fast on unsupported markets, low liquidity, or bridge delays.
 - Do not simulate fills when on-chain execution fails.
-- Treat perps/prediction as paper-mode only in this bounty cycle.
+- Keep execution scoped to spot until additional venues have live settlement parity.
 
 ## Execution policy
 - Call `synoptic.trade.quote` before `synoptic.trade.execute`.
@@ -32,3 +32,7 @@ Use Synoptic MCP tools with strict V1 trading policy:
 - Do not attempt alternate venues or unsupported pairs.
 - Do not issue multiple execute calls for the same intent unless idempotency policy allows it.
 - Return explicit tool errors if dependencies are unavailable.
+
+## Runtime auth/payment notes
+- Prefer Passport-first auth (`AUTH_MODE=passport`) and exchange session tokens through `/auth/passport/exchange`.
+- Prefer autonomous x402 minting (`SYNOPTIC_X402_MINT_URL` + `SYNOPTIC_X402_MINT_TOKEN`) over manually injected headers.

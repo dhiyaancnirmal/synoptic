@@ -5,7 +5,7 @@ Run one real `POST /markets/execute` flow that proves:
 1. x402 verification + settlement path is active.
 2. Kite bridge submission occurs when Base balance is insufficient.
 3. Destination credit is detected on Base Sepolia.
-4. Uniswap v3 swap executes on Base Sepolia.
+4. Uniswap API-powered swap execution path runs on Base Sepolia.
 5. Lifecycle state/events are persisted and queryable.
 
 ## Preconditions
@@ -14,11 +14,12 @@ Run one real `POST /markets/execute` flow that proves:
 - Funded server signer wallet:
   - Kite testnet KITE gas + USDT.
   - Base Sepolia ETH gas.
-- Valid API JWT flow working (`AUTH_MODE=siwe` for demo preferred).
+- Valid API JWT flow working (`AUTH_MODE=passport` for final demo preferred).
 
 ## Required Env (`/Users/dhiyaan/Code/synoptic/apps/api/.env`)
 - `TRADING_MODE=bridge_to_base_v1`
 - `PAYMENT_MODE=http`
+- `AUTH_MODE=passport`
 - `KITE_RPC_URL=https://rpc-testnet.gokite.ai/`
 - `BASE_SEPOLIA_RPC_URL=<your_base_sepolia_rpc>`
 - `KITE_BRIDGE_ROUTER=0xD1bd49F60A6257dC96B3A040e6a1E17296A51375`
@@ -28,7 +29,13 @@ Run one real `POST /markets/execute` flow that proves:
 - `BASE_UNISWAP_V3_FACTORY=0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24`
 - `BASE_UNISWAP_V3_ROUTER=0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4`
 - `BASE_UNISWAP_QUOTER_V2=0xC5290058841028F1614F3A6F0F5816cAd0df5E27`
+- `UNISWAP_API_BASE_URL=<developer_platform_api_base>`
+- `UNISWAP_API_KEY=<developer_platform_api_key>`
+- `UNISWAP_API_CHAIN_ID=84532`
 - `SERVER_SIGNER_PRIVATE_KEY=<demo_signer_private_key>`
+- `JWT_SECRET=<demo_jwt_secret_16+chars>`
+- `PASSPORT_VERIFY_URL=<passport_verifier_endpoint>`
+- `PASSPORT_API_KEY=<optional_verifier_key>`
 - `FACILITATOR_URL=<real_facilitator_base_url>`
 - `FACILITATOR_VERIFY_PATH=<real_verify_path>`
 - `FACILITATOR_SETTLE_PATH=<real_settle_path>`
@@ -45,8 +52,27 @@ pnpm --filter @synoptic/api test:integration
 pnpm --filter @synoptic/api dev
 ```
 
+## Runtime Env for Autonomous CLI/MCP
+Set one API auth mode:
+- static API token: `SYNOPTIC_API_TOKEN=<jwt>`
+- Passport exchange:
+  - `SYNOPTIC_PASSPORT_TOKEN=<passport_token>`
+  - `SYNOPTIC_AGENT_ID=<agent_id>`
+  - `SYNOPTIC_OWNER_ADDRESS=<owner_wallet>`
+
+Set one x402 payment mode:
+- static header: `SYNOPTIC_X_PAYMENT=<xpayment_header>`
+- mint endpoint:
+  - `SYNOPTIC_X402_MINT_URL=<mint_endpoint>`
+  - `SYNOPTIC_X402_MINT_TOKEN=<mint_auth_token>`
+
 ## Demo Execution
-1. Create SIWE challenge + verify to obtain JWT.
+1. Exchange Passport token to Synoptic API JWT (skip if using static `SYNOPTIC_API_TOKEN`):
+```bash
+curl -sS -X POST http://localhost:3001/auth/passport/exchange \
+  -H "content-type: application/json" \
+  -d '{"passportToken":"'$PASSPORT_TOKEN'","agentId":"'$AGENT_ID'","ownerAddress":"'$OWNER_ADDRESS'"}'
+```
 2. Create/fetch agent id tied to JWT.
 3. Submit quote:
 ```bash
@@ -68,9 +94,11 @@ curl -sS -X POST http://localhost:3001/markets/execute \
 
 Expected successful response includes:
 - `executionPath=BASE_SEPOLIA_UNISWAP_V3`
+- `executionSource=UNISWAP_API` (or equivalent telemetry/event evidence)
 - `bridge.status` in `{SKIPPED,CONFIRMED}`
 - `swap.status=CONFIRMED`
 - tx hashes in `bridge.*TxHash` and `swap.txHash`
+- response `evidence.*` linkage ids (`idempotencyKey`, `quoteId`, `orderId`, `settlementId`)
 
 ## Determinism Checks
 - Liquidity fail: use an unsupported pair id and confirm deterministic `UNSUPPORTED_MARKET`/`LIQUIDITY_UNAVAILABLE` behavior.
@@ -80,6 +108,7 @@ Expected successful response includes:
 
 ## Evidence Collection
 Populate `/Users/dhiyaan/Code/synoptic/files/bounty/EVIDENCE.md` after each run with:
+- Uniswap API quote/request reference ids and timing
 - source bridge tx hash
 - destination credit tx hash
 - swap tx hash

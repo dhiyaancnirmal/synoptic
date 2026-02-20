@@ -60,10 +60,36 @@ Note:
 - Use `PAYMENT_PROVIDER_URL` (preferred) or `FACILITATOR_URL` (backward-compatible alias).
 - Override facilitator paths with `PAYMENT_PROVIDER_VERIFY_PATH`/`PAYMENT_PROVIDER_SETTLE_PATH`
   (or `FACILITATOR_VERIFY_PATH`/`FACILITATOR_SETTLE_PATH`) for real Passport deployments.
-- `AUTH_MODE=siwe` enforces signature verification; `AUTH_MODE=dev` keeps local bootstrap behavior.
-- `PAYMENT_MODE=mock|http` controls payment provider behavior.
-- Perps/prediction are explicitly non-live in this cycle (paper/placeholder only).
+- `AUTH_MODE=passport` is the production-first path and requires `PASSPORT_VERIFY_URL`.
+- `AUTH_MODE=siwe` keeps wallet signature verification available for fallback/testing.
+- `AUTH_MODE=dev` is for local bootstrap only and is rejected in production.
+- `PAYMENT_MODE=http` is required (Passport facilitator flow only).
+- Only spot execution is enabled in this release.
+
+## Agent-Native Runtime Bootstrap
+- API token resolution order in CLI/MCP:
+  1. `SYNOPTIC_API_TOKEN`
+  2. Passport exchange via `/auth/passport/exchange` using:
+     - `SYNOPTIC_PASSPORT_TOKEN`
+     - `SYNOPTIC_AGENT_ID`
+     - `SYNOPTIC_OWNER_ADDRESS`
+- x402 header resolution order in CLI/MCP/dashboard demo:
+  1. explicit `xPayment` argument/flag
+  2. static `SYNOPTIC_X_PAYMENT`/`SYNOPTIC_DEMO_X_PAYMENT`
+  3. mint endpoint:
+     - `SYNOPTIC_X402_MINT_URL`
+     - `SYNOPTIC_X402_MINT_TOKEN`
+
+This keeps runtime flows autonomous while preserving manual overrides for debugging.
 
 ## Interface Governance
 Interface contracts are frozen by policy in `files/architecture/04_INTERFACE_CONTRACTS.md`.
 Breaking changes require semver bump + changelog + migration note.
+
+## Current Bounty Tracks
+- Kite AI bounty (primary):
+  - `/Users/dhiyaan/Code/synoptic/files/bounty/KITE_AI_BOUNTY_2026.md`
+- Uniswap Foundation bounty (add-on):
+  - `/Users/dhiyaan/Code/synoptic/files/bounty/UNISWAP_FOUNDATION_BOUNTY_2026.md`
+- Unified delivery tracker:
+  - `/Users/dhiyaan/Code/synoptic/files/bounty/PROGRESS_TRACKER.md`

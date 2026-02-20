@@ -6,7 +6,7 @@ interface UnifiedFeedProps {
   onFilterChange: (filter: FeedFilter) => void;
 }
 
-const filters: FeedFilter[] = ["all", "ecommerce", "spot", "perps", "prediction", "payment", "failure"];
+const filters: FeedFilter[] = ["all", "ecommerce", "spot", "payment", "failure"];
 
 export function UnifiedFeed({ items, activeFilter, onFilterChange }: UnifiedFeedProps) {
   const filtered = activeFilter === "all" ? items : items.filter((event) => event.domain === activeFilter);

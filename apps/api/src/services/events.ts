@@ -1,6 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { Prisma } from "@prisma/client";
-import type { EventName as PrismaEventName } from "@prisma/client";
+/** Prisma EventName enum values (from schema) – use string type to avoid depending on generated client export */
+type PrismaEventName =
+  | "AGENT_CREATED"
+  | "X402_CHALLENGE_ISSUED"
+  | "X402_PAYMENT_SETTLED"
+  | "TRADE_EXECUTED"
+  | "TRADE_REJECTED"
+  | "RISK_LIMIT_HIT"
+  | "BRIDGE_SUBMITTED"
+  | "BRIDGE_CONFIRMED"
+  | "BRIDGE_FAILED"
+  | "TRADE_SWAP_SUBMITTED"
+  | "TRADE_SWAP_CONFIRMED"
+  | "TRADE_SWAP_FAILED";
 import type { EventStatus, SynopticEventEnvelope, SynopticEventName } from "@synoptic/types/events";
 import type { ApiContext } from "../context.js";
 
@@ -41,14 +53,15 @@ export async function publishEvent(
     metadata: params.metadata
   };
 
-  await context.prisma.event.create({
+  // Prisma Json type may reference InputJsonValue not exported in some build environments
+  await (context.prisma as any).event.create({
     data: {
       eventId: payload.eventId,
       eventName: eventNameMap[payload.eventName],
       agentId: payload.agentId,
       timestamp: new Date(payload.timestamp),
       status: payload.status,
-      metadata: payload.metadata as Prisma.InputJsonValue
+      metadata: payload.metadata
     }
   });
 

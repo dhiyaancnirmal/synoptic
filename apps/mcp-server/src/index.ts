@@ -28,7 +28,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: "Lists available markets and optional Shopify catalog matches.",
     inputSchema: z
       .object({
-        venueType: z.enum(["SPOT", "PERP", "PREDICTION"]).optional(),
+        venueType: z.literal("SPOT").optional(),
         query: z.string().optional(),
         products_limit: z.number().int().positive().max(50).optional()
       })
@@ -40,11 +40,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: "Requests a trade quote for a market order.",
     inputSchema: z.object({
       agentId: z.string().min(1),
-      venueType: z.enum(["SPOT", "PERP", "PREDICTION"]),
+      venueType: z.literal("SPOT"),
       marketId: z.string().min(1),
       side: z.enum(["BUY", "SELL"]),
       size: z.string().min(1),
-      limitPrice: z.string().optional()
+      limitPrice: z.string().optional(),
+      xPayment: z.string().min(1).optional()
     }),
     handler: (input) => quoteTrade(input as Parameters<typeof quoteTrade>[0])
   },
@@ -54,11 +55,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     inputSchema: z.object({
       agentId: z.string().min(1),
       quoteId: z.string().uuid().optional(),
-      venueType: z.enum(["SPOT", "PERP", "PREDICTION"]),
+      venueType: z.literal("SPOT"),
       marketId: z.string().min(1),
       side: z.enum(["BUY", "SELL"]),
       size: z.string().min(1),
-      limitPrice: z.string().optional()
+      limitPrice: z.string().optional(),
+      xPayment: z.string().min(1).optional()
     }),
     handler: (input) => executeTrade(input as Parameters<typeof executeTrade>[0])
   },

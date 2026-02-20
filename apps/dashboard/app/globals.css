@@ -38,10 +38,7 @@ body {
 .landing-shell {
   min-height: 100vh;
   color: var(--floral-white);
-  background:
-    radial-gradient(1200px 500px at 10% 0%, color-mix(in oklab, var(--spicy-paprika) 30%, transparent) 0%, transparent 70%),
-    radial-gradient(900px 500px at 90% 10%, color-mix(in oklab, var(--dust-grey) 18%, transparent) 0%, transparent 65%),
-    linear-gradient(180deg, #2f2d2a 0%, #252422 52%, #252422 100%);
+  background: var(--carbon-black);
 }
 
 .hero {
@@ -442,6 +439,12 @@ body {
   color: var(--spicy-paprika);
 }
 
+.dash-inline-actions {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
 .dash-filter-row {
   margin-top: 0.7rem;
   display: flex;
@@ -689,7 +692,7 @@ body {
 .dash-trading-cards {
   margin-top: 0.7rem;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 0.45rem;
 }
 
@@ -712,6 +715,21 @@ body {
 .dash-trading-cards p {
   margin-top: 0.3rem;
   color: color-mix(in oklab, var(--floral-white) 84%, var(--dust-grey));
+}
+
+.dash-error-inline {
+  margin-top: 0.45rem;
+  color: var(--spicy-paprika);
+  font-size: 0.82rem;
+}
+
+.dash-demo-proof {
+  margin-top: 0.55rem;
+  border: 1px solid color-mix(in oklab, var(--spicy-paprika) 28%, transparent);
+  padding: 0.55rem;
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.8rem;
 }
 
 .dash-failure-grid {

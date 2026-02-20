@@ -5,7 +5,8 @@ import type { DashboardTab } from "./types";
 interface SidebarNavProps {
   activeTab: DashboardTab;
   onChange: (tab: DashboardTab) => void;
-  apiHealth: string;
+  apiHealthLabel: string;
+  apiState: "ok" | "warn";
 }
 
 const tabs: Array<{ id: DashboardTab; label: string }> = [
@@ -17,7 +18,7 @@ const tabs: Array<{ id: DashboardTab; label: string }> = [
   { id: "failures", label: "Failures" }
 ];
 
-export function SidebarNav({ activeTab, onChange, apiHealth }: SidebarNavProps) {
+export function SidebarNav({ activeTab, onChange, apiHealthLabel, apiState }: SidebarNavProps) {
   return (
     <aside className="dash-sidebar">
       <div>
@@ -40,7 +41,7 @@ export function SidebarNav({ activeTab, onChange, apiHealth }: SidebarNavProps) 
 
       <div className="dash-sidebar-foot">
         <p className="pixel-text">Kite Testnet 2368</p>
-        <p className={`dash-health ${apiHealth === "ok" ? "ok" : "warn"}`}>API {apiHealth}</p>
+        <p className={`dash-health ${apiState}`}>API {apiHealthLabel}</p>
       </div>
     </aside>
   );

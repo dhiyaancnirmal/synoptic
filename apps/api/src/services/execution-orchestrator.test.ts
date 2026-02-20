@@ -6,6 +6,7 @@ import type { ApiConfig } from "../config.js";
 import { createExecutionOrchestrator } from "./execution-orchestrator.js";
 import type { BridgeAdapter } from "./chains/bridge-adapter.js";
 import type { UniswapV3Adapter } from "./chains/uniswap-v3-adapter.js";
+import { ApiError } from "../utils/errors.js";
 
 const baseConfig: ApiConfig = {
   NODE_ENV: "test",
@@ -21,6 +22,10 @@ const baseConfig: ApiConfig = {
   BASE_UNISWAP_V3_FACTORY: "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24",
   BASE_UNISWAP_V3_ROUTER: "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4",
   BASE_UNISWAP_QUOTER_V2: "0xC5290058841028F1614F3A6F0F5816cAd0df5E27",
+  UNISWAP_API_BASE_URL: "https://trade-api.gateway.uniswap.org/v1",
+  UNISWAP_API_KEY: undefined,
+  UNISWAP_API_CHAIN_ID: 84532,
+  UNISWAP_EXECUTION_MODE: "api_fallback",
   KITE_BRIDGE_ROUTER: "0xD1bd49F60A6257dC96B3A040e6a1E17296A51375",
   KITE_TOKEN_ON_BASE: "0xFB9a6AF5C014c32414b4a6e208a89904c6dAe266",
   BUSDT_TOKEN_ON_BASE: "0xdAD5b9eB32831D54b7f2D8c92ef4E2A68008989C",
@@ -32,15 +37,18 @@ const baseConfig: ApiConfig = {
   SWAP_DEADLINE_SECONDS: 300,
   SETTLEMENT_TOKEN_ADDRESS: "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
   JWT_SECRET: "test-secret-123456",
+  PASSPORT_VERIFY_URL: undefined,
+  PASSPORT_API_KEY: undefined,
+  PASSPORT_VERIFY_TIMEOUT_MS: 4000,
   SHOPIFY_API_KEY: undefined,
   SHOPIFY_CLIENT_ID: undefined,
   SHOPIFY_CLIENT_SECRET: undefined,
   SHOPIFY_TIMEOUT_MS: 5000,
-  PAYMENT_MODE: "mock",
-  FACILITATOR_URL: "mock://facilitator",
+  PAYMENT_MODE: "http",
+  FACILITATOR_URL: "https://facilitator.example",
   FACILITATOR_TIMEOUT_MS: 3000,
-  FACILITATOR_VERIFY_PATH: "/verify",
-  FACILITATOR_SETTLE_PATH: "/settle",
+  FACILITATOR_VERIFY_PATH: "/v2/verify",
+  FACILITATOR_SETTLE_PATH: "/v2/settle",
   PAYMENT_RETRY_ATTEMPTS: 3,
   X402_PAY_TO: "synoptic-facilitator",
   X402_PRICE_USD: "0.10",
@@ -107,7 +115,8 @@ function createUniswapAdapter(params: {
         amountOut: parseUnits("0.98", 18),
         poolAddress: "0x1111111111111111111111111111111111111111" as Address,
         priceImpactBps: 40,
-        estimatedPrice: "0.980000"
+        estimatedPrice: "0.980000",
+        source: "DIRECT_VIEM" as const
       };
     },
     async executeExactInputSingle(paramsExec) {
@@ -117,7 +126,8 @@ function createUniswapAdapter(params: {
       return {
         txHash: "0x2222222222222222222222222222222222222222222222222222222222222222",
         amountIn: paramsExec.amountIn,
-        amountOut: parseUnits("0.97", 18)
+        amountOut: parseUnits("0.97", 18),
+        source: "DIRECT_VIEM" as const
       };
     },
     async findRecentTransferTx() {
@@ -221,4 +231,25 @@ test("execution orchestrator maps swap slippage failures", async () => {
   assert.equal(result.failureCode, "SLIPPAGE_EXCEEDED");
   assert.equal(result.bridge?.status, "SKIPPED");
   assert.equal(result.swap?.status, "FAILED");
+});
+
+test("execution orchestrator rejects non-spot venues", async () => {
+  const { context } = createContext();
+  const orchestrator = createExecutionOrchestrator(context, {
+    uniswapAdapter: createUniswapAdapter({ baseBalance: parseUnits("5", 18) })
+  });
+
+  await assert.rejects(
+    orchestrator.quote({
+      agentId: "agent-1",
+      venueType: "PERP",
+      marketId: "PERP_BTC_USDT_TESTNET",
+      side: "BUY",
+      size: "1"
+    }),
+    (error: unknown) =>
+      error instanceof ApiError &&
+      error.code === "VALIDATION_ERROR" &&
+      error.details?.reason === "UNSUPPORTED_VENUE"
+  );
 });

@@ -12,6 +12,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:migrate:status": "prisma migrate status",
     "prisma:seed": "prisma db seed",
+    "prebuild": "prisma generate",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "lint": "eslint .",
@@ -23,6 +24,7 @@
   "dependencies": {
     "@prisma/client": "^6.16.2",
     "@synoptic/types": "workspace:*",
+    "@vercel/node": "^3.2.29",
     "compression": "1.8.1",
     "cors": "2.8.6",
     "express": "5.2.1",

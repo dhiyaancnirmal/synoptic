@@ -23,7 +23,10 @@ export function registerHealthRoute(app: Express, context: ApiContext): void {
         paymentProviderMode: context.config.PAYMENT_MODE,
         facilitatorMode: context.config.PAYMENT_MODE,
         authMode: context.config.AUTH_MODE,
-        tradingMode: context.config.TRADING_MODE
+        tradingMode: context.config.TRADING_MODE,
+        uniswapExecutionMode: context.config.UNISWAP_EXECUTION_MODE,
+        uniswapApiConfigured: Boolean(context.config.UNISWAP_API_KEY),
+        uniswapApiBaseUrl: context.config.UNISWAP_API_BASE_URL
       }
     });
   });

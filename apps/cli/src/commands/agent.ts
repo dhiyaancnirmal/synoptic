@@ -33,10 +33,12 @@ export function registerAgentCommands(program: Command): void {
     .command("once")
     .requiredOption("--agent <id>", "Agent ID")
     .requiredOption("--strategy <name>", "Strategy name")
-    .action(async (opts: { agent: string; strategy: string }) => {
+    .option("--x-payment <header>", "Passport facilitator X-PAYMENT header")
+    .action(async (opts: { agent: string; strategy: string; xPayment?: string }) => {
       const result = await executeStrategyOnce({
         agentId: opts.agent,
-        strategy: opts.strategy
+        strategy: opts.strategy,
+        xPayment: opts.xPayment
       });
       console.log(JSON.stringify(result, null, 2));
     });
@@ -46,7 +48,8 @@ export function registerAgentCommands(program: Command): void {
     .requiredOption("--agent <id>", "Agent ID")
     .requiredOption("--interval <duration>", "Execution interval")
     .requiredOption("--strategy <name>", "Strategy name")
-    .action(async (opts: { agent: string; interval: string; strategy: string }) => {
+    .option("--x-payment <header>", "Passport facilitator X-PAYMENT header")
+    .action(async (opts: { agent: string; interval: string; strategy: string; xPayment?: string }) => {
       const intervalMs = parseIntervalMs(opts.interval);
       const statePath = await runtimeFile(opts.agent);
 
@@ -82,7 +85,8 @@ export function registerAgentCommands(program: Command): void {
       while (keepRunning) {
         const result = await executeStrategyOnce({
           agentId: opts.agent,
-          strategy: opts.strategy
+          strategy: opts.strategy,
+          xPayment: opts.xPayment
         });
         console.log(JSON.stringify(result, null, 2));
         await new Promise((resolve) => setTimeout(resolve, intervalMs));

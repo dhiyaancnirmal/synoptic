@@ -34,6 +34,9 @@ This documentation set is organized for parallel execution across frontend, back
 - `files/research/08_OPENCLAW_INTEGRATION_SURFACES.md`: OpenClaw integration surfaces
 - `files/roadmap/09_SPOT_NOW_PERPS_PREDICTION_NEXT.md`: Delivery roadmap
 - `files/references/10_SOURCES_AND_CONFIDENCE.md`: Source provenance and confidence register
+- `files/bounty/KITE_AI_BOUNTY_2026.md`: Kite bounty requirement matrix and status
+- `files/bounty/UNISWAP_FOUNDATION_BOUNTY_2026.md`: Uniswap bounty requirements and API-first execution plan
+- `files/bounty/PROGRESS_TRACKER.md`: Unified Kite + Uniswap execution checklist
 
 ## Legacy Archive Map
 Legacy snapshots are preserved unchanged in:

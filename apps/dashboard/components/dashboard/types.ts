@@ -1,9 +1,10 @@
 import type { AgentRecord } from "@synoptic/types/agent";
 import type { SynopticEventEnvelope, SynopticEventName } from "@synoptic/types/events";
 import type { OrderRecord, OrderRejectionReason, VenueType } from "@synoptic/types/orders";
+import type { ExecutionSource } from "@synoptic/types/rest";
 
 export type DashboardTab = "overview" | "agents" | "payments" | "trading" | "commerce" | "failures";
-export type FeedFilter = "all" | "ecommerce" | "spot" | "perps" | "prediction" | "payment" | "failure";
+export type FeedFilter = "all" | "ecommerce" | "spot" | "payment" | "failure";
 
 export interface DashboardKpiModel {
   label: string;
@@ -25,6 +26,9 @@ export interface UnifiedFeedItem {
   route?: string;
   settlementId?: string;
   txHash?: string;
+  executionSource?: ExecutionSource;
+  uniswapQuoteRequestId?: string;
+  uniswapSwapRequestId?: string;
 }
 
 export interface PaymentRowModel {
@@ -60,7 +64,5 @@ export interface DashboardDataModel {
 
 export function mapVenueToFilter(venue?: VenueType): FeedFilter {
   if (venue === "SPOT") return "spot";
-  if (venue === "PERP") return "perps";
-  if (venue === "PREDICTION") return "prediction";
   return "all";
 }

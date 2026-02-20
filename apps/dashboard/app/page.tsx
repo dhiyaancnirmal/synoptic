@@ -91,7 +91,7 @@ export default async function HomePage() {
         <div className="section-inner narrative-block">
           <div className="narrative-header">
             <p className="pixel-text section-label">Now and Next</p>
-            <h3>Spot is live. Perps and prediction are paper-mode placeholders in this cycle.</h3>
+            <h3>Spot execution is the production path in this release.</h3>
           </div>
           <div className="narrative-cards">
             <article>
@@ -104,7 +104,7 @@ export default async function HomePage() {
             </article>
             <article>
               <h4>Next</h4>
-              <p>Perps and prediction stay non-live (paper mode) until separate execution and risk validation.</p>
+              <p>Expand to additional venues only after live settlement, risk controls, and evidence parity.</p>
             </article>
           </div>
         </div>

@@ -16,7 +16,14 @@ test("fetchHealth returns parsed health payload", async () => {
         status: "ok",
         service: "api",
         timestamp: new Date().toISOString(),
-        dependencies: { database: "up", paymentProviderMode: "mock", authMode: "dev" }
+        dependencies: {
+          database: "up",
+          paymentProviderMode: "http",
+          authMode: "dev",
+          uniswapExecutionMode: "api_fallback",
+          uniswapApiConfigured: false,
+          uniswapApiBaseUrl: "https://trade-api.gateway.uniswap.org/v1"
+        }
       }),
       {
         status: 200,
@@ -27,7 +34,9 @@ test("fetchHealth returns parsed health payload", async () => {
   try {
     const health = await fetchHealth();
     assert.equal(health.status, "ok");
-    assert.equal(health.dependencies?.paymentProviderMode, "mock");
+    assert.equal(health.dependencies?.paymentProviderMode, "http");
+    assert.equal(health.dependencies?.uniswapExecutionMode, "api_fallback");
+    assert.equal(health.dependencies?.uniswapApiConfigured, false);
   } finally {
     globalThis.fetch = originalFetch;
   }

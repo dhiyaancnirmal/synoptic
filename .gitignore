@@ -26,3 +26,4 @@ packages/contracts/.env
 packages/contracts/broadcast
 packages/contracts/deployments
 data/
+.vercel

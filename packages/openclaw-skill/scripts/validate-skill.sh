@@ -14,8 +14,8 @@ if ! grep -q "Do not simulate fills" "$SKILL_FILE"; then
   exit 1
 fi
 
-if ! grep -q "paper-mode" "$SKILL_FILE"; then
-  echo "SKILL.md missing explicit paper-mode scope for perps/prediction"
+if ! grep -q "spot until additional venues have live settlement parity" "$SKILL_FILE"; then
+  echo "SKILL.md missing explicit spot-only scope"
   exit 1
 fi
 
