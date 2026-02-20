@@ -1,0 +1,11 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "buildCommand": "pnpm --filter @synoptic/agent-server build"
+  },
+  "deploy": {
+    "startCommand": "pnpm --filter @synoptic/db db:push && pnpm --filter @synoptic/agent-server exec tsx src/index.ts",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 120
+  }
+}
