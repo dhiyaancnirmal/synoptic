@@ -1,7 +1,5 @@
-import { DashboardClient } from "@/components/dashboard/DashboardClient";
-
-const explorerUrl = process.env.NEXT_PUBLIC_EXPLORER_URL ?? "https://testnet.kitescan.ai";
+import { redirect } from "next/navigation";
 
 export default function DashboardPage() {
-  return <DashboardClient explorerUrl={explorerUrl} />;
+  redirect("/agents");
 }

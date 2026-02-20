@@ -37,6 +37,7 @@ test("canonical payment/trade/activity fixtures map to view models", () => {
   assert.equal(event.chain, "monad-testnet");
 });
 
+// Documents deprecated sepoliaTxHash compatibility shim: legacy API payloads map to executionTxHash.
 test("legacy trade payload keys still map to execution fields", () => {
   const trade = mapTrade({
     id: "legacy-1",
@@ -47,10 +48,9 @@ test("legacy trade payload keys still map to execution fields", () => {
     amountIn: "1",
     amountOut: "100",
     sepoliaTxHash: "0xlegacy",
-    chainId: 11155111,
+    chainId: 10143,
     createdAt: "2026-02-20T00:00:00.000Z"
   });
 
   assert.equal(trade.executionTxHash, "0xlegacy");
-  assert.equal(trade.sepoliaTxHash, "0xlegacy");
 });

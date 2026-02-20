@@ -1,0 +1,10 @@
+{
+  "agents": [
+    {
+      "agentId": "agent-1",
+      "ownerAddress": "0xowner",
+      "status": "ACTIVE",
+      "createdAt": "2026-02-20T00:00:00.000Z"
+    }
+  ]
+}

@@ -1,10 +1,22 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "../../packages/config/tsconfig/react.json",
   "compilerOptions": {
+    "target": "ES2022",
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "noEmit": true,
     "baseUrl": ".",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "allowJs": false,
     "paths": {
       "@/*": [
         "./*"
@@ -17,13 +29,14 @@
     ],
     "incremental": true,
     "isolatedModules": true,
-    "jsx": "preserve"
+    "jsx": "react-jsx"
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts"
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

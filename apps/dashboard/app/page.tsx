@@ -1,5 +1,5 @@
 import Dither from "../components/Dither";
-import { pingApi } from "../lib/api";
+import { pingApi } from "../lib/api/client";
 import Link from "next/link";
 
 export default async function HomePage() {
@@ -31,15 +31,15 @@ export default async function HomePage() {
 
           <div className="hero-copy">
             <p className="pixel-text hero-kicker">Agent Command Center</p>
-            <h2>Synoptic is an agent operations dashboard on Kite.</h2>
+            <h2>Synoptic is a routed operator runtime for autonomous agents.</h2>
             <p>
-              Track autonomous agent identity, x402 payment lifecycle, execution outcomes, and settlement evidence in
-              one operator view.
+              Run lifecycle controls, watch x402 payments, inspect trade execution stages, and track cross-chain
+              activity across Kite and Monad from one workspace.
             </p>
             <div className="hero-actions">
-              <Link href="/dashboard">Open Dashboard</Link>
+              <Link href="/agents">Open Agents</Link>
               <a href="#flows" className="action-secondary">
-                View Payment Flow
+                View Runtime Flow
               </a>
             </div>
           </div>
@@ -47,18 +47,18 @@ export default async function HomePage() {
           <div id="flows" className="flow-grid">
             <article>
               <p className="pixel-text">01</p>
-              <h3>Challenge</h3>
-              <p>Paid endpoint returns HTTP 402 with payment requirements.</p>
+              <h3>Control</h3>
+              <p>Operator starts, stops, or triggers agents from canonical route-based screens.</p>
             </article>
             <article>
               <p className="pixel-text">02</p>
-              <h3>Payment</h3>
-              <p>Agent retries with signed X-PAYMENT payload under policy limits.</p>
+              <h3>Observe</h3>
+              <p>Realtime events stream over WebSocket with polling fallback when transport degrades.</p>
             </article>
             <article>
               <p className="pixel-text">03</p>
-              <h3>Settlement</h3>
-              <p>Payment provider verifies and settles, then execution result is returned.</p>
+              <h3>Verify</h3>
+              <p>Payments, trades, and activity correlate by IDs and chain references for auditability.</p>
             </article>
           </div>
         </div>
@@ -68,20 +68,20 @@ export default async function HomePage() {
         <div className="section-inner narrative-block">
           <div className="narrative-header">
             <p className="pixel-text section-label">What Synoptic Is</p>
-            <h3>Operational visibility for autonomous agent actions.</h3>
+            <h3>Operational control surface for autonomous execution pipelines.</h3>
           </div>
           <div className="narrative-cards">
             <article>
-              <h4>Agent Identity</h4>
-              <p>Monitor agent ownership, status, and runtime state with wallet-linked records.</p>
+              <h4>Routed Workspace</h4>
+              <p>Dedicated screens for Agents, Payments, Trading, and Activity replace one-page tab sprawl.</p>
             </article>
             <article>
-              <h4>x402 Payment Lifecycle</h4>
-              <p>Trace challenge, signed retry, verification, and settlement for every paid action.</p>
+              <h4>Compat + Canonical</h4>
+              <p>Frontend supports compatibility routes now while preparing clean canonical /api cutover.</p>
             </article>
             <article>
-              <h4>Execution Evidence</h4>
-              <p>Map actions to events, failure reasons, and chain references for operator review.</p>
+              <h4>Normalized Contracts</h4>
+              <p>View-model adapters normalize payload shapes so UI behavior stays stable during backend evolution.</p>
             </article>
           </div>
         </div>
@@ -91,20 +91,20 @@ export default async function HomePage() {
         <div className="section-inner narrative-block">
           <div className="narrative-header">
             <p className="pixel-text section-label">Now and Next</p>
-            <h3>Spot is live. Perps and prediction are paper-mode placeholders in this cycle.</h3>
+            <h3>Phase-gated frontend is live; integrations and hardening continue behind stable interfaces.</h3>
           </div>
           <div className="narrative-cards">
             <article>
               <h4>Now</h4>
-              <p>Spot flow with x402 evidence chain and failure handling.</p>
+              <p>Route-based runtime, websocket-first updates, action idempotency, and session-gated access.</p>
             </article>
             <article>
-              <h4>Supported Domain</h4>
-              <p>Ecommerce and trading events can share one unified operator feed.</p>
+              <h4>In Progress</h4>
+              <p>Canonical API adoption, richer payment/trade state machines, and stronger auth UX.</p>
             </article>
             <article>
               <h4>Next</h4>
-              <p>Perps and prediction stay non-live (paper mode) until separate execution and risk validation.</p>
+              <p>Compatibility cleanup, full real-provider cutover, and stricter production observability controls.</p>
             </article>
           </div>
         </div>
@@ -114,13 +114,13 @@ export default async function HomePage() {
         <div className="section-inner narrative-block">
           <div className="narrative-header">
             <p className="pixel-text section-label">Bounty Fit</p>
-            <h3>Built for autonomous execution with verifiable payment and settlement traces.</h3>
+            <h3>Built for autonomous execution with verifiable lifecycle traces across every surface.</h3>
           </div>
           <ul className="narrative-list">
-            <li>Autonomous execution with minimal operator intervention</li>
-            <li>Payments tied directly to executed actions</li>
-            <li>Verifiable logs and on-chain references</li>
-            <li>Explicit failure states and operator-safe messaging</li>
+            <li>Agent lifecycle controls with request idempotency protections</li>
+            <li>x402 challenge and settlement states visible in dedicated payment flows</li>
+            <li>Trade progression from quote to confirmation with attestation linkage</li>
+            <li>Cross-chain timeline with coherent event normalization and replay safety</li>
           </ul>
         </div>
       </section>
@@ -129,12 +129,12 @@ export default async function HomePage() {
         <div className="footer-grid">
           <div className="footer-copy">
             <p className="pixel-text">Status</p>
-            <h3>Every paid action maps to an event, settlement state, and chain reference.</h3>
+            <h3>Synoptic is now a route-first control and observability runtime.</h3>
             <p>
-              Frontend tracks frozen contracts only. Event envelope includes eventId, agentId, timestamp, status, and
-              metadata.
+              Start with <code>/agents</code>, validate <code>/payments</code>, inspect <code>/trading</code>, and
+              audit <code>/activity</code>. Session bootstrap is available at <code>/login</code>.
             </p>
-            <Link className="footer-link" href="/dashboard">
+            <Link className="footer-link" href="/agents">
               Open operator workspace
             </Link>
           </div>

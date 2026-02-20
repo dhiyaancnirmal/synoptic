@@ -4,18 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --port 3000",
+    "dev": "sh -c 'next dev --port ${PORT:-3000}'",
     "build": "next build",
-    "start": "next start --port 3000",
+    "start": "sh -c 'next start --port ${PORT:-3000}'",
     "lint": "eslint .",
+    "test:legacy-routes": "bash ./scripts/check-no-legacy-endpoints.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test lib/**/*.test.ts",
+    "test:e2e": "bash ./scripts/e2e-agent-browser.sh",
     "clean": "rm -rf .next dist"
   },
   "dependencies": {
     "@react-three/fiber": "^9.5.0",
     "@react-three/postprocessing": "^3.0.4",
-    "@synoptic/types": "workspace:*",
     "next": "16.1.6",
     "ogl": "^1.0.11",
     "postprocessing": "^6.38.2",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.0",
+    "agent-browser": "^0.12.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@types/three": "^0.183.0",

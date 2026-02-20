@@ -1,6 +1,6 @@
 export type AgentRole = "oracle" | "strategy" | "executor";
 export type AgentStatus = "idle" | "running" | "paused" | "error";
-export type ActivityChain = "kite-testnet" | "monad-testnet" | "sepolia" | (string & {});
+export type ActivityChain = "kite-testnet" | "monad-testnet" | (string & {});
 
 export interface Agent {
   id: string;
@@ -57,10 +57,6 @@ export interface Trade {
   status: TradeStatus;
   executionTxHash?: string;
   executionChain?: ActivityChain;
-  /**
-   * @deprecated Use executionTxHash.
-   */
-  sepoliaTxHash?: string;
   kiteAttestationTx?: string;
   strategyReason?: string;
   createdAt: string;

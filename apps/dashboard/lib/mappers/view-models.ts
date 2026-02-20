@@ -37,10 +37,6 @@ export interface TradeVM {
   chainId?: number;
   executionChain: ActivityChain;
   executionTxHash?: string;
-  /**
-   * @deprecated Use executionTxHash.
-   */
-  sepoliaTxHash?: string;
   kiteAttestationTx?: string;
   strategyReason?: string;
   createdAt: string;
@@ -128,8 +124,7 @@ export function mapTrade(input: unknown): TradeVM {
   const chainId = readNumber(raw, ["chainId"]);
   const executionTxHash =
     canonical.executionTxHash ??
-    canonical.sepoliaTxHash ??
-    readString(raw, ["executionTxHash", "sepoliaTxHash", "txHash"]);
+    readString(raw, ["executionTxHash", "sepoliaTxHash", "txHash"]); // sepoliaTxHash: deprecated compatibility key for legacy API payloads
   const executionChain = normalizeChain(
     canonical.executionChain ??
       readString(raw, ["executionChain", "chain"]) ??
@@ -147,7 +142,6 @@ export function mapTrade(input: unknown): TradeVM {
     chainId: typeof chainId === "number" ? chainId : undefined,
     executionChain,
     executionTxHash,
-    sepoliaTxHash: executionTxHash,
     kiteAttestationTx: canonical.kiteAttestationTx ?? readString(raw, ["kiteAttestationTx"]),
     strategyReason: canonical.strategyReason ?? readString(raw, ["strategyReason", "reason"]),
     createdAt: canonical.createdAt ?? readString(raw, ["createdAt", "updatedAt"]) ?? new Date().toISOString(),

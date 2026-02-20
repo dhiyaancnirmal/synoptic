@@ -1,0 +1,15 @@
+{
+  "agents": [
+    {
+      "id": "agent-1",
+      "name": "Oracle Agent",
+      "role": "oracle",
+      "status": "running",
+      "eoaAddress": "0xowner",
+      "dailyBudgetUsd": "5",
+      "spentTodayUsd": "1",
+      "createdAt": "2026-02-20T00:00:00.000Z",
+      "updatedAt": "2026-02-20T00:00:10.000Z"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "payments": [
+    {
+      "id": "pay-1",
+      "agentId": "agent-1",
+      "status": "settled",
+      "amountUsd": "0.1",
+      "serviceUrl": "/oracle/price",
+      "kiteTxHash": "0xpay",
+      "createdAt": "2026-02-20T00:00:15.000Z"
+    }
+  ]
+}

@@ -27,7 +27,8 @@ test("fetchHealth returns parsed health payload", async () => {
   try {
     const health = await fetchHealth();
     assert.equal(health.status, "ok");
-    assert.equal(health.dependencies?.paymentProviderMode, "mock");
+    const dependencies = health.dependencies as Record<string, unknown> | undefined;
+    assert.equal(dependencies?.paymentProviderMode, "mock");
   } finally {
     globalThis.fetch = originalFetch;
   }

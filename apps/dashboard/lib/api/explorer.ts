@@ -1,3 +1,7 @@
+/**
+ * Explorer chain resolution. Defaults: Kite + Monad.
+ * `sepolia` is retained as a deprecated compatibility shim for legacy payloads/links.
+ */
 export type ExplorerChain = "kite-testnet" | "monad-testnet" | "sepolia" | (string & {});
 
 function normalizeChain(value?: string): ExplorerChain | undefined {
