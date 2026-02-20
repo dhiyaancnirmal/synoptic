@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-EXPECTED_NODE="22.21.1"
+EXPECTED_NODE="22.22.0"
 EXPECTED_NODE_RAW="v${EXPECTED_NODE}"
 NOW_UTC="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT_DIR="${OUT_DIR:-artifacts/evidence/p0-p1/${NOW_UTC}}"

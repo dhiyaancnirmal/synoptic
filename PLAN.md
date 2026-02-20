@@ -73,10 +73,10 @@ Agent (Kite address) → calls x402 service → 402 →
 
 ### The Two Wallet Concerns
 
-| Wallet | Lives On | Purpose | Who Controls |
-|--------|----------|---------|-------------|
-| Kite Passport AA wallet | Kite (2368) | x402 payments — paying for services | The user/agent via MCP session |
-| Agent EOA (AGENT_PRIVATE_KEY) | Kite + Monad | Signing swaps on Monad + attestations on Kite | Server (Railway env var) |
+| Wallet                        | Lives On     | Purpose                                       | Who Controls                   |
+| ----------------------------- | ------------ | --------------------------------------------- | ------------------------------ |
+| Kite Passport AA wallet       | Kite (2368)  | x402 payments — paying for services           | The user/agent via MCP session |
+| Agent EOA (AGENT_PRIVATE_KEY) | Kite + Monad | Signing swaps on Monad + attestations on Kite | Server (Railway env var)       |
 
 The Passport AA wallet pays. The EOA executes. Both are Kite addresses.
 
@@ -87,10 +87,12 @@ The Passport AA wallet pays. The EOA executes. Both are Kite addresses.
 ### Path A: Inside Cursor / Claude Desktop (Mode 1)
 
 User has two MCP servers configured:
+
 1. **Kite Passport MCP** — `https://neo.dev.gokite.ai/v1/mcp` (payment tools)
 2. **Synoptic MCP** (optional) — our own MCP server exposing trading tools
 
 The AI agent in Cursor:
+
 1. User says "monitor ETH price and trade when momentum is bullish"
 2. Agent calls `GET /oracle/price?pair=ETH/USDT` on our server
 3. Server returns 402 with payment challenge
@@ -105,6 +107,7 @@ The AI agent in Cursor:
 ### Path B: CLI Tool (`npx @synoptic/agent`)
 
 The CLI is an MCP client (using `@modelcontextprotocol/sdk`):
+
 1. Connects to Kite MCP server programmatically
 2. Runs an autonomous loop (same as Path A but headless)
 3. Handles 402 → MCP payment → retry automatically
@@ -113,6 +116,7 @@ The CLI is an MCP client (using `@modelcontextprotocol/sdk`):
 ### Path C: Agent Server Autonomous Loop (Railway)
 
 The tick runner on Railway:
+
 1. Agent is registered with a Kite Passport address
 2. Every 30s: fetch price → strategy → trade → attest
 3. x402 payments happen on every oracle call
@@ -131,6 +135,7 @@ The tick runner on Railway:
 Remove Sepolia from agent-server and runtime; use Monad env/config. Agent-server and runtime have no Sepolia references. The dashboard and shared types retain only documented compatibility shims (see Documentation policy): `sepoliaTxHash` in the trade mapper and `sepolia` in the explorer when env is set.
 
 **Files to modify:**
+
 - `apps/agent-server/src/env.ts` — replace SEPOLIA vars with MONAD vars
 - `apps/agent-server/src/server.ts` — no Sepolia references
 - `apps/agent-server/src/oracle/server.ts` — already good (CoinGecko prices)
@@ -138,6 +143,7 @@ Remove Sepolia from agent-server and runtime; use Monad env/config. Agent-server
 - `apps/agent-server/src/routes/compat.ts` — update chain references
 
 **New env vars:**
+
 ```
 MONAD_RPC_URL=https://testnet-rpc.monad.xyz
 MONAD_CHAIN_ID=10143
@@ -149,22 +155,26 @@ MONAD_EXPLORER_URL=https://testnet.monadexplorer.com
 Replace `RealTradingAdapter` Sepolia logic with Monad.
 
 **Approach A — Uniswap Trading API:**
+
 - Same API (`https://trade-api.gateway.uniswap.org/v1`) with `chainId: 10143`
 - If it works: cleanest path, already have the client code
 - Need to verify: does the API accept Monad testnet chainId?
 
 **Approach B — Direct Uniswap V2 Router calls (fallback):**
+
 - Call Uniswap V2 Router contract on Monad directly via ethers.js
 - `swapExactETHForTokens()`, `swapExactTokensForETH()`
 - Need router contract address on Monad testnet (find via explorer or Uniswap docs)
 - More work but guaranteed to work if pools have liquidity
 
 **Key token addresses (Monad testnet):**
+
 - WMON: `0x760afe86e5de5fa0ee542fc7b7b713e1c5425701`
 - USDC: `0x62534e4bbd6d9ebac0ac99aeaa0aa48e56372df0` (84K holders)
 - ETH (native): `0x0000000000000000000000000000000000000000`
 
 **Files to modify:**
+
 - `packages/agent-core/src/trading/real-trading-adapter.ts` — Monad chain config
 - `packages/agent-core/src/trading/uniswap-client.ts` — chainId 10143
 - `packages/agent-core/src/trading/swap-executor.ts` — Monad provider
@@ -195,6 +205,7 @@ contract ServiceRegistry {
 Deploy to Kite testnet. Fund deployer from faucet.gokite.ai.
 
 **Files:**
+
 - `packages/contracts/contracts/ServiceRegistry.sol` (new, replaces TradeRegistry)
 - `packages/contracts/scripts/deploy.ts` — deploy to Kite testnet
 - `packages/agent-core/src/attestation/real-attestation-adapter.ts` — update
@@ -202,12 +213,13 @@ Deploy to Kite testnet. Fund deployer from faucet.gokite.ai.
 ### 1.4 Gasless Attestations (Stretch)
 
 Use Kite AA SDK for gasless `recordService()` calls:
+
 ```typescript
-import { GokiteAASDK } from 'gokite-aa-sdk';
+import { GokiteAASDK } from "gokite-aa-sdk";
 const sdk = new GokiteAASDK(
-  'kite_testnet',
-  'https://rpc-testnet.gokite.ai',
-  'https://bundler-service.staging.gokite.ai/rpc/'
+  "kite_testnet",
+  "https://rpc-testnet.gokite.ai",
+  "https://bundler-service.staging.gokite.ai/rpc/"
 );
 ```
 
@@ -237,27 +249,33 @@ Every step that touches our API = x402 payment = on-chain settlement on Kite. Th
 We must ship a dedicated dashboard surface for judges that makes autonomous trading behavior obvious without reading logs.
 
 Required cockpit sections:
+
 1. **Agent Session Panel**
+
 - Session start time
 - Agent identity (`kitePassportId` / owner + executor address)
 - Budget cap and spend progression
 
 2. **Spot Trading Panel (Monad)**
+
 - Executed trades timeline (pair, size, status, tx hash)
 - Live balances/holdings for tracked spot tokens (MON/USDC/USDT/etc.)
 - Derived exposure view (spot holdings, not perp positions)
 
 3. **Payment + Attestation Panel**
+
 - x402 challenge/authorization/settlement lifecycle
 - Kite settlement tx link per paid action
 - Kite attestation tx link for each executed trade/service action
 
 4. **Realtime Stream Panel**
+
 - Render live stream for price/equity/throughput using Liveline (`https://benji.org/liveline`)
 - Show last streamed block/event timestamp
 - Show ingestion status for QuickNode stream events
 
 Constraints:
+
 - Keep canonical API mode as default.
 - Keep explorer links chain-aware and env-driven.
 - Preserve compatibility rendering for deprecated payload keys during migration window.
@@ -286,19 +304,19 @@ packages/agent-cli/
 Using `@modelcontextprotocol/sdk`:
 
 ```typescript
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 
-const mcpClient = new Client({ name: 'synoptic-agent', version: '1.0.0' });
+const mcpClient = new Client({ name: "synoptic-agent", version: "1.0.0" });
 // Connect to Kite MCP
 await mcpClient.connect(transport);
 
 // When we hit 402:
-const payer = await mcpClient.callTool('get_payer_addr', {});
-const auth = await mcpClient.callTool('approve_payment', {
+const payer = await mcpClient.callTool("get_payer_addr", {});
+const auth = await mcpClient.callTool("approve_payment", {
   payer_addr: payer.payer_addr,
   payee_addr: servicePayeeAddress,
   amount: challengeAmount,
-  token_type: 'USDC'
+  token_type: "USDC"
 });
 // Retry with auth.x_payment as X-Payment header
 ```
@@ -342,11 +360,13 @@ $ npx @synoptic/agent --task "trade ETH/USDC on momentum signals"
 ### 3.1 Multi-Agent Architecture
 
 **Provider Agent** — runs on our server:
+
 - Serves market analysis, price predictions, trade signals
 - All endpoints x402-gated
 - Receives USDC payments on Kite
 
 **Consumer Agent** — runs as CLI or in Cursor:
+
 - Has a Kite Passport with funded session
 - Calls provider agent's x402 endpoints
 - Pays per request
@@ -355,6 +375,7 @@ $ npx @synoptic/agent --task "trade ETH/USDC on momentum signals"
 ### 3.2 Agentic Commerce Protocol
 
 Aligns with Kite's `agentic-commerce-protocol` repo (OpenAI + Stripe standard):
+
 - Agent discovers services (catalog endpoint)
 - Agent evaluates pricing
 - Agent pays and consumes
@@ -363,6 +384,7 @@ Aligns with Kite's `agentic-commerce-protocol` repo (OpenAI + Stripe standard):
 ### 3.3 Simple AMM on Kite (Stretch)
 
 If time allows: deploy a minimal constant-product AMM on Kite testnet.
+
 - KITE/TestUSD pair
 - Seed with faucet tokens
 - Agent can trade on Kite directly
@@ -373,40 +395,43 @@ If time allows: deploy a minimal constant-product AMM on Kite testnet.
 ## Network Reference
 
 ### Kite Testnet
-| Field | Value |
-|-------|-------|
-| Chain ID | 2368 |
-| RPC | `https://rpc-testnet.gokite.ai/` |
-| Explorer | `https://testnet.kitescan.ai/` |
-| Faucet | `https://faucet.gokite.ai` |
-| Token | KITE |
-| Settlement Token (USDT) | `0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63` |
-| Settlement Contract | `0x8d9FaD78d5Ce247aA01C140798B9558fd64a63E3` |
-| AA Bundler | `https://bundler-service.staging.gokite.ai/rpc/` |
-| Gasless API | `https://gasless.gokite.ai` |
-| Facilitator | `https://facilitator.pieverse.io` |
-| MCP URL | `https://neo.dev.gokite.ai/v1/mcp` |
-| Passport Portal | `https://x402-portal-eight.vercel.app/` |
+
+| Field                   | Value                                            |
+| ----------------------- | ------------------------------------------------ |
+| Chain ID                | 2368                                             |
+| RPC                     | `https://rpc-testnet.gokite.ai/`                 |
+| Explorer                | `https://testnet.kitescan.ai/`                   |
+| Faucet                  | `https://faucet.gokite.ai`                       |
+| Token                   | KITE                                             |
+| Settlement Token (USDT) | `0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63`     |
+| Settlement Contract     | `0x8d9FaD78d5Ce247aA01C140798B9558fd64a63E3`     |
+| AA Bundler              | `https://bundler-service.staging.gokite.ai/rpc/` |
+| Gasless API             | `https://gasless.gokite.ai`                      |
+| Facilitator             | `https://facilitator.pieverse.io`                |
+| MCP URL                 | `https://neo.dev.gokite.ai/v1/mcp`               |
+| Passport Portal         | `https://x402-portal-eight.vercel.app/`          |
 
 ### Monad Testnet
-| Field | Value |
-|-------|-------|
-| Chain ID | 10143 |
-| RPC | `https://testnet-rpc.monad.xyz` |
-| Explorer | `https://testnet.monadexplorer.com` |
-| Faucet | `https://testnet.monad.xyz` |
-| Token | MON |
-| WMON | `0x760afe86e5de5fa0ee542fc7b7b713e1c5425701` |
-| USDC | `0x62534e4bbd6d9ebac0ac99aeaa0aa48e56372df0` |
-| Uniswap V2 Router | TBD (find on explorer) |
+
+| Field             | Value                                        |
+| ----------------- | -------------------------------------------- |
+| Chain ID          | 10143                                        |
+| RPC               | `https://testnet-rpc.monad.xyz`              |
+| Explorer          | `https://testnet.monadexplorer.com`          |
+| Faucet            | `https://testnet.monad.xyz`                  |
+| Token             | MON                                          |
+| WMON              | `0x760afe86e5de5fa0ee542fc7b7b713e1c5425701` |
+| USDC              | `0x62534e4bbd6d9ebac0ac99aeaa0aa48e56372df0` |
+| Uniswap V2 Router | TBD (find on explorer)                       |
 
 ### Hyperliquid HyperCore (Stretch)
-| Field | Value |
-|-------|-------|
-| Chain ID (EVM) | 998 (testnet) / 999 (mainnet) |
-| RPC | `https://rpc.hyperliquid-testnet.xyz/evm` |
-| Trading API | HyperCore REST/WS/gRPC (not EVM) |
-| QuickNode | Streams + Webhooks supported |
+
+| Field          | Value                                     |
+| -------------- | ----------------------------------------- |
+| Chain ID (EVM) | 998 (testnet) / 999 (mainnet)             |
+| RPC            | `https://rpc.hyperliquid-testnet.xyz/evm` |
+| Trading API    | HyperCore REST/WS/gRPC (not EVM)          |
+| QuickNode      | Streams + Webhooks supported              |
 
 ### Cross-Chain Attestation Pattern (Monad + Hyperliquid)
 
@@ -426,17 +451,19 @@ ServiceRegistry.recordService(
 ```
 
 Examples:
+
 - Monad swap attestation: `recordService(chainId: 10143, targetTxHash: 0xMonad...)`
 - HyperEVM attestation: `recordService(chainId: 998, targetTxHash: 0xHyper...)`
 
-| Dimension | Monad | Hyperliquid |
-|-----------|-------|-------------|
-| Trading method | Uniswap V2 AMM (on-chain swap tx) | HyperCore API (REST/WS orderbook, off-EVM) |
-| What gets attested | Monad swap tx hash | HyperCore fill/order ID (or HyperEVM tx hash if wrapped) |
-| Agent signing mode | EOA on Monad (`ethers.js`) | HyperCore API auth/signing flow |
-| QuickNode bounty mapping | Monad Streams ($1K) | HyperCore Streams ($1K) |
+| Dimension                | Monad                             | Hyperliquid                                              |
+| ------------------------ | --------------------------------- | -------------------------------------------------------- |
+| Trading method           | Uniswap V2 AMM (on-chain swap tx) | HyperCore API (REST/WS orderbook, off-EVM)               |
+| What gets attested       | Monad swap tx hash                | HyperCore fill/order ID (or HyperEVM tx hash if wrapped) |
+| Agent signing mode       | EOA on Monad (`ethers.js`)        | HyperCore API auth/signing flow                          |
+| QuickNode bounty mapping | Monad Streams ($1K)               | HyperCore Streams ($1K)                                  |
 
 Hyperliquid nuance:
+
 1. HyperCore trades do not always produce a traditional EVM tx hash.
 2. We can attest either the HyperCore fill ID directly or a HyperEVM wrapper tx hash.
 3. Either way, Kite attestation architecture is unchanged.
@@ -458,14 +485,15 @@ No engineering time should be spent on P2 if it risks P0 or P1 delivery.
 These are the blocking acceptance checks. QuickNode work starts only after these pass.
 
 ```bash
-nvm install 22.21.1
-nvm use 22.21.1
+nvm install 22.22.0
+nvm use 22.22.0
 corepack enable
 pnpm install
 bash scripts/p0-p1-evidence-harness.sh
 ```
 
 Expected pass markers:
+
 1. `backend guardrails: pass`
 2. `ok - Uniswap client uses required headers on check_approval, quote, and swap`
 3. `ok - Uniswap client validates tx data in /check_approval and /swap responses`
@@ -476,34 +504,37 @@ Expected pass markers:
 For browser E2E proof in same evidence bundle:
 
 ```bash
-nvm use 22.21.1
+nvm use 22.22.0
 EXPECT_RUNNING_SERVERS=1 bash scripts/p0-p1-evidence-harness.sh
 ```
 
 Additional pass marker:
+
 1. `dashboard e2e passed`
 
 Evidence output path:
+
 1. `artifacts/evidence/p0-p1/<timestamp-utc>/`
 2. Includes per-step logs and `SUMMARY.txt`.
 
 ### Kite AI Bounty ($10,000)
 
-| Requirement | How We Hit It |
-|-------------|--------------|
-| Build on Kite testnet | All identity, payments, attestations on Kite 2368 |
-| x402 payment flows | Every API call → 402 → Kite MCP pay → facilitator settle |
-| Verifiable agent identity | Every agent = Kite Passport AA wallet address |
-| Autonomous execution | Tick runner on Railway, CLI agent, no human intervention |
-| Open-source (MIT) | GitHub public repo |
-| Agent authenticates | Kite Passport MCP + SIWE |
-| Executes paid actions | x402 payments for oracle + trade execution |
-| On-chain settlement | Facilitator settles USDT on Kite per payment |
-| On-chain attestations | ServiceRegistry contract on Kite |
-| Live demo | Dashboard on Vercel + Agent on Railway |
-| Clear README | Step-by-step setup + demo instructions |
+| Requirement               | How We Hit It                                            |
+| ------------------------- | -------------------------------------------------------- |
+| Build on Kite testnet     | All identity, payments, attestations on Kite 2368        |
+| x402 payment flows        | Every API call → 402 → Kite MCP pay → facilitator settle |
+| Verifiable agent identity | Every agent = Kite Passport AA wallet address            |
+| Autonomous execution      | Tick runner on Railway, CLI agent, no human intervention |
+| Open-source (MIT)         | GitHub public repo                                       |
+| Agent authenticates       | Kite Passport MCP + SIWE                                 |
+| Executes paid actions     | x402 payments for oracle + trade execution               |
+| On-chain settlement       | Facilitator settles USDT on Kite per payment             |
+| On-chain attestations     | ServiceRegistry contract on Kite                         |
+| Live demo                 | Dashboard on Vercel + Agent on Railway                   |
+| Clear README              | Step-by-step setup + demo instructions                   |
 
 **Bonus points:**
+
 - Multi-agent coordination (Phase 3 — provider + consumer agents)
 - Gas abstraction (AA SDK for gasless attestations)
 - Scoped permissions (session budgets, daily limits, auto-pause)
@@ -519,24 +550,25 @@ Evidence output path:
 
 ### Judging Criteria Mapping
 
-| Criteria | Our Story |
-|----------|-----------|
-| Agent Autonomy | 30s tick loop, budget-scoped, auto-pause on errors |
-| Correct x402 | Every paid API call maps to x402 payment with on-chain settlement. Budget exhaustion = graceful 403 + pause. |
-| Security | Session-scoped budgets, no private key exposure, AA wallet via MCP, rate limits, consecutive error limits |
-| Developer Experience | `npx @synoptic/agent`, clear docs, MCP integration for Cursor |
-| Real-world Applicability | Any API can be x402-gated using this pattern. Reference implementation. |
+| Criteria                 | Our Story                                                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| Agent Autonomy           | 30s tick loop, budget-scoped, auto-pause on errors                                                           |
+| Correct x402             | Every paid API call maps to x402 payment with on-chain settlement. Budget exhaustion = graceful 403 + pause. |
+| Security                 | Session-scoped budgets, no private key exposure, AA wallet via MCP, rate limits, consecutive error limits    |
+| Developer Experience     | `npx @synoptic/agent`, clear docs, MCP integration for Cursor                                                |
+| Real-world Applicability | Any API can be x402-gated using this pattern. Reference implementation.                                      |
 
 ### QuickNode Bounties ($2,000)
 
-| Track | Prize | What We Build |
-|-------|-------|--------------|
-| Best Use of QuickNode Monad Streams | $1,000 | Stream Monad swap events to dashboard via webhook |
-| Best Use of QuickNode HyperCore Streams | $1,000 | Stream perp data for market analysis (stretch) |
+| Track                                   | Prize  | What We Build                                     |
+| --------------------------------------- | ------ | ------------------------------------------------- |
+| Best Use of QuickNode Monad Streams     | $1,000 | Stream Monad swap events to dashboard via webhook |
+| Best Use of QuickNode HyperCore Streams | $1,000 | Stream perp data for market analysis (stretch)    |
 
 ### QuickNode Execution Policy (ROI + Account Constraint)
 
 Given free-plan endpoint limits, default strategy is:
+
 1. Ship **one** QuickNode track first (recommended: Monad Streams, lower integration risk).
 2. Only pursue both tracks if a second account/endpoint is provisioned and P0+P1 are already locked.
 3. If pursuing HyperCore, treat it as a stretch item because perp execution is on HyperCore (off-EVM), which increases integration complexity.
@@ -544,18 +576,21 @@ Given free-plan endpoint limits, default strategy is:
 ### QuickNode Single-Track Plan (Post-Gate Only)
 
 Activation gate:
+
 1. `scripts/p0-p1-evidence-harness.sh` must pass with no P0/P1 failures.
 2. Reviewer evidence bundle must exist under `artifacts/evidence/p0-p1/<timestamp-utc>/`.
 
 Single-track scope (Monad Streams only):
+
 1. Create QuickNode Streams pipeline for Monad swap event ingestion.
 2. Filter to swap events consumed by Synoptic.
 3. Deliver to webhook receiver endpoint in agent-server.
 4. Persist transformed events in DB and surface in dashboard activity feed.
 
 Evidence harness for this phase (run only after activation gate):
+
 ```bash
-nvm use 22.21.1
+nvm use 22.22.0
 # Run after a passing P0/P1 harness bundle exists.
 # 1) Capture webhook receiver logs in agent-server
 # 2) Trigger known Monad swap activity
@@ -563,6 +598,7 @@ nvm use 22.21.1
 ```
 
 QuickNode proof points:
+
 1. Stream configuration screenshot (dataset, filters, destination webhook).
 2. Webhook delivery log with event id and timestamp.
 3. Database row/log confirmation of transformed event ingestion.
@@ -572,16 +608,19 @@ QuickNode proof points:
 ### Uniswap Definition of Done (Must Have)
 
 Uniswap bounty delivery must use the Trading API flow explicitly:
+
 1. `POST /check_approval`
 2. `POST /quote`
 3. `POST /swap`
 
 Required headers in server-side calls:
+
 - `x-api-key`
 - `x-universal-router-version: 2.0`
 - `Content-Type: application/json`
 
 Evidence required:
+
 1. Live swap execution on supported testnet/mainnet path used in the submission.
 2. Public interface URL for judges.
 3. Open-source code showing Trading API integration points.
@@ -591,6 +630,7 @@ Evidence required:
 ## Env Vars Required
 
 ### Railway (agent-server)
+
 ```
 # Auth
 AUTH_TOKEN_SECRET=<random-secret>
@@ -617,6 +657,7 @@ DASHBOARD_URL=https://synoptic-dashboard.vercel.app
 ```
 
 ### Vercel (dashboard)
+
 ```
 NEXT_PUBLIC_AGENT_SERVER_URL=https://agent-server-production-e47b.up.railway.app
 NEXT_PUBLIC_AGENT_SERVER_WS=wss://agent-server-production-e47b.up.railway.app/ws
@@ -629,6 +670,7 @@ NEXT_PUBLIC_MONAD_EXPLORER_URL=https://testnet.monadexplorer.com
 ## Parallel Execution Plan
 
 ### Critical Path (Non-Parallel)
+
 1. Deploy `ServiceRegistry` to Kite and set `SERVICE_REGISTRY_ADDRESS`.
 2. Validate paid oracle flow end-to-end (`402 → MCP approve_payment → facilitator settle`).
 3. Validate Monad swap execution path (Uniswap API or direct V2 router fallback).
@@ -637,18 +679,19 @@ NEXT_PUBLIC_MONAD_EXPLORER_URL=https://testnet.monadexplorer.com
 
 ### Parallel Workstreams (Maximum Concurrency)
 
-| Lane | Scope | Can Start Immediately | Depends On | Deliverables |
-|------|-------|------------------------|------------|--------------|
-| A | Kite contracts + attestations | Yes | None | `ServiceRegistry` deployed, ABI exported, attestation adapter updated |
-| B | Agent server chain cutover | Yes | None | Sepolia removed from agent-server/runtime; Monad env/config live; dashboard/types retain documented compatibility shims (see Documentation policy) |
-| C | Trading execution on Monad | Yes | Lane B config baseline | Quote + execute working with fallback path decided |
-| D | Dashboard chain UX + trading cockpit | Yes | None | Monad explorer links, Kite settlement links, payment/trade lifecycle UI, session/trades/holdings cockpit, Liveline realtime panel |
-| E | CLI autonomous agent | Yes | None | `npx @synoptic/agent` with MCP payment + trade loop |
-| F | DevOps + quality gates | Yes | None | Railway/Vercel envs, smoke scripts, CI checks, demo script artifacts |
-| G | QuickNode Streams integration | After Lane C first trade event schema | Lane C output shape | Streams webhook ingestion + dashboard event feed + cockpit stream status |
-| H | Multi-agent commerce stretch | After Lanes A/B/C stable | Paid endpoint baseline | Provider+consumer agent flow and docs |
+| Lane | Scope                                | Can Start Immediately                 | Depends On             | Deliverables                                                                                                                                       |
+| ---- | ------------------------------------ | ------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A    | Kite contracts + attestations        | Yes                                   | None                   | `ServiceRegistry` deployed, ABI exported, attestation adapter updated                                                                              |
+| B    | Agent server chain cutover           | Yes                                   | None                   | Sepolia removed from agent-server/runtime; Monad env/config live; dashboard/types retain documented compatibility shims (see Documentation policy) |
+| C    | Trading execution on Monad           | Yes                                   | Lane B config baseline | Quote + execute working with fallback path decided                                                                                                 |
+| D    | Dashboard chain UX + trading cockpit | Yes                                   | None                   | Monad explorer links, Kite settlement links, payment/trade lifecycle UI, session/trades/holdings cockpit, Liveline realtime panel                  |
+| E    | CLI autonomous agent                 | Yes                                   | None                   | `npx @synoptic/agent` with MCP payment + trade loop                                                                                                |
+| F    | DevOps + quality gates               | Yes                                   | None                   | Railway/Vercel envs, smoke scripts, CI checks, demo script artifacts                                                                               |
+| G    | QuickNode Streams integration        | After Lane C first trade event schema | Lane C output shape    | Streams webhook ingestion + dashboard event feed + cockpit stream status                                                                           |
+| H    | Multi-agent commerce stretch         | After Lanes A/B/C stable              | Paid endpoint baseline | Provider+consumer agent flow and docs                                                                                                              |
 
 Execution gating:
+
 1. Lanes A/B/C/F are mandatory for Kite P0.
 2. Uniswap API acceptance criteria must be met before allocating time to G/H.
 3. Lanes G/H are suspended if they threaten P0/P1 completion dates.
@@ -670,11 +713,13 @@ H (Commerce)  <── A+B+C
 ### Parallel Sprint Cadence
 
 #### Sprint 0 (Day 0): Alignment + Interfaces
+
 1. Freeze canonical event contracts (`payment_settled`, `trade_executed`, `attested`).
 2. Freeze env var schema and chain constants (`2368`, `10143`).
 3. Assign lane owners and daily merge windows.
 
 #### Sprint 1 (Days 1-2): Core Rails in Parallel
+
 1. Lane A deploys `ServiceRegistry` and publishes ABI/address.
 2. Lane B removes Sepolia from agent-server/runtime and lands Monad runtime config; dashboard/types retain documented compatibility shims (see Documentation policy).
 3. Lane C validates Uniswap API on Monad; if blocked, switches to direct router fallback.
@@ -683,6 +728,7 @@ H (Commerce)  <── A+B+C
 6. Lane F prepares Railway/Vercel env templates and smoke test scripts.
 
 #### Sprint 2 (Days 3-4): Integrate + Harden
+
 1. Merge lanes A+B+C into end-to-end paid tick flow.
 2. Connect lane D UI to live end-to-end data.
 3. Connect lane E CLI to live end-to-end data.
@@ -690,6 +736,7 @@ H (Commerce)  <── A+B+C
 5. Enable QuickNode lane G if lane C event shape is stable.
 
 #### Sprint 3 (Days 5-6): Submission Surface
+
 1. Final demo runbook validation (dashboard + CLI + explorer proofs).
 2. Optional lane H multi-agent commerce if critical path is complete.
 3. Record demo and package submission.
@@ -699,6 +746,7 @@ H (Commerce)  <── A+B+C
 ## Documentation Policy and Cleanup
 
 ### Delete
+
 - All Sepolia references in agent-server env, chain config, and provider code. Dashboard and packages/types retain only documented compatibility shims (legacy mapper key `sepoliaTxHash`, explorer chain fallback for `sepolia` when `NEXT_PUBLIC_SEPOLIA_EXPLORER_URL` is set).
 - `apps/api/` (old API, already deleted in git status)
 - `apps/cli/` (old CLI, replace with new agent-cli)
@@ -716,11 +764,13 @@ The following are retained as deprecated compatibility only. No agent-server or 
 2. **Explorer**: Explorer supports `chain=sepolia` when `NEXT_PUBLIC_SEPOLIA_EXPLORER_URL` is set (legacy links/payloads).
 
 ### Canonical Docs Kept
+
 - `PLAN.md` (single source of truth for architecture, execution, and delivery)
 - `README.md` (short entry point that links to `PLAN.md`)
 - `bounties/*.md` (source bounty specs used for submission targeting)
 
 ### Keep
+
 - Agent-server core (Fastify, WebSocket, orchestrator, tick runner)
 - Oracle middleware (x402 flow — already production-ready)
 - Facilitator adapter (verify + settle — already done)

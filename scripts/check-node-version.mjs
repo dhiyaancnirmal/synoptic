@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const REQUIRED_NODE = "22.21.1";
+const REQUIRED_NODE = "22.22.0";
 const REQUIRED_PNPM = "9.15.4";
 
 function parse(version) {
@@ -29,7 +29,9 @@ if (!validMajor || !validMinimum) {
   console.error("Fix options:");
   console.error(`- nvm: nvm install ${REQUIRED_NODE} && nvm use`);
   console.error(`- volta: volta install node@${REQUIRED_NODE} pnpm@${REQUIRED_PNPM}`);
-  console.error(`- asdf: asdf install nodejs ${REQUIRED_NODE} && asdf local nodejs ${REQUIRED_NODE}`);
+  console.error(
+    `- asdf: asdf install nodejs ${REQUIRED_NODE} && asdf local nodejs ${REQUIRED_NODE}`
+  );
   console.error("");
   process.exit(1);
 }

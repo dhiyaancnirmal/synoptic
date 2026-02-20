@@ -7,11 +7,11 @@ Synoptic is an agent-native trading system where AI agents authenticate and pay 
 - `/Users/dhiyaan/Code/synoptic/PLAN.md` is the single source of truth for architecture, delivery plan, and implementation decisions.
 - `/Users/dhiyaan/Code/synoptic/bounties/` contains source bounty specs used for submission targeting.
 
-## Reviewer Quickstart (Node 22.21.1 exact)
+## Reviewer Quickstart (Node 22.22.0 exact)
 
 ```bash
-nvm install 22.21.1
-nvm use 22.21.1
+nvm install 22.22.0
+nvm use 22.22.0
 corepack enable
 pnpm install
 cp .env.example .env
@@ -20,6 +20,7 @@ pnpm dev
 ```
 
 Local services:
+
 - Dashboard: `http://localhost:3000`
 - Agent server: `http://localhost:3001`
 
@@ -28,18 +29,19 @@ Local services:
 Run the evidence harness:
 
 ```bash
-nvm use 22.21.1
+nvm use 22.22.0
 bash scripts/p0-p1-evidence-harness.sh
 ```
 
 If services are already running and you want UI E2E evidence in the same run:
 
 ```bash
-nvm use 22.21.1
+nvm use 22.22.0
 EXPECT_RUNNING_SERVERS=1 bash scripts/p0-p1-evidence-harness.sh
 ```
 
 Expected pass markers:
+
 - `backend guardrails: pass`
 - `ok - Uniswap client uses required headers on check_approval, quote, and swap`
 - `ok - Uniswap client validates tx data in /check_approval and /swap responses`
@@ -55,6 +57,7 @@ Explorer and trade mapping default to Kite + Monad; legacy Sepolia payload/explo
 ## Evidence Checklist (Fresh Reviewer)
 
 Collect the following in one review session:
+
 - Terminal log bundle from `artifacts/evidence/p0-p1/<timestamp-utc>/`.
 - Screenshot of dashboard `/agents` page (agent identity visible).
 - Screenshot of dashboard `/payments` page showing `Oracle Challenge / Retry`.
@@ -67,6 +70,7 @@ Collect the following in one review session:
 ## QuickNode Track Policy (After P0/P1 Only)
 
 QuickNode is explicitly non-blocking for acceptance:
+
 - Do not start QuickNode integration until the P0/P1 harness passes.
 - Default to one track only: Monad Streams.
 - HyperCore Streams remains stretch, only if extra endpoint/account exists and no P0/P1 risk remains.
