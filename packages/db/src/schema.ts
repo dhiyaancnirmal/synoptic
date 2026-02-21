@@ -1,4 +1,4 @@
-import { index, integer, jsonb, numeric, pgTable, serial, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, numeric, pgTable, serial, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const agents = pgTable("agents", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -106,5 +106,87 @@ export const priceSnapshots = pgTable(
   },
   (table) => ({
     pairTimestampIdx: index("idx_price_pair_time").on(table.pair, table.timestamp)
+  })
+);
+
+export const streamBlocks = pgTable(
+  "stream_blocks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    blockNumber: integer("block_number").notNull(),
+    blockHash: text("block_hash"),
+    parentHash: text("parent_hash"),
+    timestamp: integer("timestamp"),
+    transactionCount: integer("transaction_count").default(0).notNull(),
+    gasUsed: text("gas_used"),
+    gasLimit: text("gas_limit"),
+    rawPayload: jsonb("raw_payload"),
+    receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    blockNumberUniq: uniqueIndex("idx_stream_blocks_number").on(table.blockNumber),
+    receivedIdx: index("idx_stream_blocks_received").on(table.receivedAt)
+  })
+);
+
+export const derivedTransfers = pgTable(
+  "derived_transfers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    blockNumber: integer("block_number").notNull(),
+    txHash: text("tx_hash").notNull(),
+    logIndex: integer("log_index").default(0).notNull(),
+    fromAddress: text("from_address").notNull(),
+    toAddress: text("to_address").notNull(),
+    tokenAddress: text("token_address").notNull(),
+    amount: text("amount"),
+    tokenSymbol: text("token_symbol"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    txLogUniq: uniqueIndex("idx_derived_transfers_tx_log").on(table.txHash, table.logIndex),
+    blockIdx: index("idx_derived_transfers_block").on(table.blockNumber)
+  })
+);
+
+export const derivedContractActivity = pgTable(
+  "derived_contract_activity",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    contractAddress: text("contract_address").notNull(),
+    blockStart: integer("block_start").notNull(),
+    blockEnd: integer("block_end").notNull(),
+    txCount: integer("tx_count").default(0).notNull(),
+    uniqueCallers: integer("unique_callers").default(0).notNull(),
+    failedTxCount: integer("failed_tx_count").default(0).notNull(),
+    totalGasUsed: text("total_gas_used"),
+    computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    contractBlockUniq: uniqueIndex("idx_derived_contract_block").on(
+      table.contractAddress,
+      table.blockStart,
+      table.blockEnd
+    ),
+    contractIdx: index("idx_derived_contract_address").on(table.contractAddress)
+  })
+);
+
+export const marketplacePurchases = pgTable(
+  "marketplace_purchases",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    agentId: uuid("agent_id").references(() => agents.id),
+    sku: text("sku").notNull(),
+    params: jsonb("params").default({}),
+    paymentId: uuid("payment_id").references(() => payments.id),
+    status: text("status").notNull(),
+    resultHash: text("result_hash"),
+    resultPayload: jsonb("result_payload"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    agentIdx: index("idx_purchases_agent_id").on(table.agentId),
+    skuIdx: index("idx_purchases_sku").on(table.sku)
   })
 );

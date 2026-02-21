@@ -92,6 +92,92 @@ export interface RuntimeStoreContract {
     chain: ActivityEvent["chain"],
     data: Record<string, unknown>
   ): Promise<ActivityEvent>;
+  upsertStreamBlock(input: {
+    blockNumber: number;
+    blockHash?: string;
+    parentHash?: string;
+    timestamp?: number;
+    transactionCount: number;
+    gasUsed?: string;
+    gasLimit?: string;
+    rawPayload?: Record<string, unknown>;
+  }): Promise<{ id: string; blockNumber: number }>;
+  insertDerivedTransfer(input: {
+    blockNumber: number;
+    txHash: string;
+    logIndex: number;
+    fromAddress: string;
+    toAddress: string;
+    tokenAddress: string;
+    amount?: string;
+    tokenSymbol?: string;
+  }): Promise<{ id: string }>;
+  upsertContractActivity(input: {
+    contractAddress: string;
+    blockStart: number;
+    blockEnd: number;
+    txCount: number;
+    uniqueCallers: number;
+    failedTxCount: number;
+    totalGasUsed?: string;
+  }): Promise<{ id: string }>;
+  queryStreamBlocks(limit?: number): Promise<Array<{
+    id: string;
+    blockNumber: number;
+    blockHash?: string;
+    transactionCount: number;
+    gasUsed?: string;
+    timestamp?: number;
+    receivedAt: string;
+  }>>;
+  queryDerivedTransfers(limit?: number): Promise<Array<{
+    id: string;
+    blockNumber: number;
+    txHash: string;
+    fromAddress: string;
+    toAddress: string;
+    tokenAddress: string;
+    amount?: string;
+    createdAt: string;
+  }>>;
+  queryContractActivity(limit?: number): Promise<Array<{
+    id: string;
+    contractAddress: string;
+    blockStart: number;
+    blockEnd: number;
+    txCount: number;
+    uniqueCallers: number;
+    computedAt: string;
+  }>>;
+  createPurchase(input: {
+    agentId?: string;
+    sku: string;
+    params?: Record<string, unknown>;
+    paymentId?: string;
+    status: string;
+    resultHash?: string;
+    resultPayload?: Record<string, unknown>;
+  }): Promise<{ id: string; sku: string; status: string; createdAt: string }>;
+  getPurchase(id: string): Promise<{
+    id: string;
+    agentId?: string;
+    sku: string;
+    params?: Record<string, unknown>;
+    paymentId?: string;
+    status: string;
+    resultHash?: string;
+    resultPayload?: Record<string, unknown>;
+    createdAt: string;
+  } | undefined>;
+  listPurchases(agentId?: string): Promise<Array<{
+    id: string;
+    agentId?: string;
+    sku: string;
+    paymentId?: string;
+    status: string;
+    resultHash?: string;
+    createdAt: string;
+  }>>;
   compatAgents(): Promise<Array<{ agentId: string; ownerAddress: string; status: CompatAgentStatus; createdAt: string }>>;
   compatAgent(id: string): Promise<{ agentId: string; ownerAddress: string; status: CompatAgentStatus; createdAt: string } | undefined>;
   compatEvents(agentId: string): Promise<CompatEvent[]>;
@@ -106,6 +192,10 @@ export class RuntimeStore implements RuntimeStoreContract {
   private readonly activity: ActivityEvent[] = [];
   private readonly orders = new Map<string, CompatOrder>();
   private readonly priceSnapshots: Array<{ pair: string; price: string; source: string; timestamp: string }> = [];
+  private readonly streamBlocksByNumber = new Map<number, { id: string; blockNumber: number; blockHash?: string; parentHash?: string; timestamp?: number; transactionCount: number; gasUsed?: string; gasLimit?: string; rawPayload?: Record<string, unknown>; receivedAt: string }>();
+  private readonly derivedTransfersList: Array<{ id: string; blockNumber: number; txHash: string; logIndex: number; fromAddress: string; toAddress: string; tokenAddress: string; amount?: string; tokenSymbol?: string; createdAt: string }> = [];
+  private readonly contractActivityMap = new Map<string, { id: string; contractAddress: string; blockStart: number; blockEnd: number; txCount: number; uniqueCallers: number; failedTxCount: number; totalGasUsed?: string; computedAt: string }>();
+  private readonly purchases = new Map<string, { id: string; agentId?: string; sku: string; params?: Record<string, unknown>; paymentId?: string; status: string; resultHash?: string; resultPayload?: Record<string, unknown>; createdAt: string }>();
 
   async listAgents(): Promise<Agent[]> {
     return [...this.agents.values()];
@@ -307,6 +397,114 @@ export class RuntimeStore implements RuntimeStoreContract {
 
   async listRecentPriceSnapshots(pair: string, since: Date) {
     return this.priceSnapshots.filter((item) => item.pair === pair && new Date(item.timestamp) >= since);
+  }
+
+  async upsertStreamBlock(input: {
+    blockNumber: number;
+    blockHash?: string;
+    parentHash?: string;
+    timestamp?: number;
+    transactionCount: number;
+    gasUsed?: string;
+    gasLimit?: string;
+    rawPayload?: Record<string, unknown>;
+  }) {
+    const existing = this.streamBlocksByNumber.get(input.blockNumber);
+    const id = existing?.id ?? randomUUID();
+    const record = { id, ...input, receivedAt: new Date().toISOString() };
+    this.streamBlocksByNumber.set(input.blockNumber, record);
+    return { id, blockNumber: input.blockNumber };
+  }
+
+  async insertDerivedTransfer(input: {
+    blockNumber: number;
+    txHash: string;
+    logIndex: number;
+    fromAddress: string;
+    toAddress: string;
+    tokenAddress: string;
+    amount?: string;
+    tokenSymbol?: string;
+  }) {
+    const dup = this.derivedTransfersList.find(
+      (t) => t.txHash === input.txHash && t.logIndex === input.logIndex
+    );
+    if (dup) return { id: dup.id };
+    const id = randomUUID();
+    this.derivedTransfersList.unshift({ id, ...input, createdAt: new Date().toISOString() });
+    return { id };
+  }
+
+  async upsertContractActivity(input: {
+    contractAddress: string;
+    blockStart: number;
+    blockEnd: number;
+    txCount: number;
+    uniqueCallers: number;
+    failedTxCount: number;
+    totalGasUsed?: string;
+  }) {
+    const key = `${input.contractAddress}:${input.blockStart}:${input.blockEnd}`;
+    const existing = this.contractActivityMap.get(key);
+    const id = existing?.id ?? randomUUID();
+    this.contractActivityMap.set(key, { id, ...input, computedAt: new Date().toISOString() });
+    return { id };
+  }
+
+  async queryStreamBlocks(limit = 50) {
+    return [...this.streamBlocksByNumber.values()]
+      .sort((a, b) => b.blockNumber - a.blockNumber)
+      .slice(0, limit)
+      .map(({ id, blockNumber, blockHash, transactionCount, gasUsed, timestamp, receivedAt }) => ({
+        id, blockNumber, blockHash, transactionCount, gasUsed, timestamp, receivedAt
+      }));
+  }
+
+  async queryDerivedTransfers(limit = 50) {
+    return this.derivedTransfersList.slice(0, limit).map(
+      ({ id, blockNumber, txHash, fromAddress, toAddress, tokenAddress, amount, createdAt }) => ({
+        id, blockNumber, txHash, fromAddress, toAddress, tokenAddress, amount, createdAt
+      })
+    );
+  }
+
+  async queryContractActivity(limit = 50) {
+    return [...this.contractActivityMap.values()]
+      .sort((a, b) => b.blockEnd - a.blockEnd)
+      .slice(0, limit)
+      .map(({ id, contractAddress, blockStart, blockEnd, txCount, uniqueCallers, computedAt }) => ({
+        id, contractAddress, blockStart, blockEnd, txCount, uniqueCallers, computedAt
+      }));
+  }
+
+  async createPurchase(input: {
+    agentId?: string;
+    sku: string;
+    params?: Record<string, unknown>;
+    paymentId?: string;
+    status: string;
+    resultHash?: string;
+    resultPayload?: Record<string, unknown>;
+  }) {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const record = { id, ...input, createdAt: now };
+    this.purchases.set(id, record);
+    return { id, sku: input.sku, status: input.status, createdAt: now };
+  }
+
+  async getPurchase(id: string) {
+    return this.purchases.get(id);
+  }
+
+  async listPurchases(agentId?: string) {
+    const all = [...this.purchases.values()];
+    const filtered = agentId ? all.filter((p) => p.agentId === agentId) : all;
+    return filtered
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map(({ id, agentId, sku, paymentId, status, resultHash, createdAt }) => ({
+        id, agentId, sku, paymentId, status, resultHash, createdAt
+      }));
   }
 
   async compatAgents() {

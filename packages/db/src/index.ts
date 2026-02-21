@@ -23,3 +23,4 @@ export type SynopticDb = ReturnType<typeof createDbClient>;
 
 export * from "./schema.js";
 export * from "./repos/index.js";
+export { eq, desc, and, sql } from "drizzle-orm";

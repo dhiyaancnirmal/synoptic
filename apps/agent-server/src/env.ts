@@ -10,6 +10,7 @@ export interface AgentServerEnv {
   kiteFacilitatorUrl: string;
   kiteNetwork: string;
   kiteTestUsdtAddress: string;
+  kitePaymentAssetDecimals: number;
   kiteServicePayTo: string;
   agentPrivateKey: string;
   executionChainId: number;
@@ -19,6 +20,7 @@ export interface AgentServerEnv {
   kiteRpcUrl: string;
   uniswapApiKey: string;
   registryAddress: string;
+  facilitatorMode: "real" | "demo";
   quicknodeSecurityToken: string;
   monadUsdcAddress: string;
   monadUsdtAddress: string;
@@ -57,6 +59,10 @@ export function loadEnv(): AgentServerEnv {
     kiteNetwork: process.env.KITE_NETWORK ?? "kite-testnet",
     kiteTestUsdtAddress:
       process.env.KITE_TEST_USDT_ADDRESS ?? "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
+    kitePaymentAssetDecimals: readNumber(
+      process.env.KITE_PAYMENT_ASSET_DECIMALS ?? process.env.KITE_TEST_USDT_DECIMALS,
+      6
+    ),
     kiteServicePayTo:
       process.env.KITE_SERVICE_PAYTO ??
       process.env.KITE_FACILITATOR_ADDRESS ??
@@ -75,6 +81,10 @@ export function loadEnv(): AgentServerEnv {
     uniswapApiKey: process.env.UNISWAP_API_KEY ?? "",
     registryAddress:
       process.env.SERVICE_REGISTRY_ADDRESS ?? process.env.TRADE_REGISTRY_ADDRESS ?? "",
+    facilitatorMode:
+      (process.env.FACILITATOR_MODE === "demo" || !process.env.KITE_FACILITATOR_URL)
+        ? "demo"
+        : "real",
     quicknodeSecurityToken:
       process.env.QUICKNODE_SECURITY_TOKEN ??
       process.env.QUICKNODE_STREAM_SECURITY_TOKEN ??

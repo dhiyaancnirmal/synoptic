@@ -1,13 +1,17 @@
 import { randomUUID } from "node:crypto";
-import type { Repositories } from "@synoptic/db";
+import type { Repositories, SynopticDb } from "@synoptic/db";
+import { eq, desc, streamBlocks, derivedTransfers, derivedContractActivity, marketplacePurchases } from "@synoptic/db";
 import type { ActivityEvent, Agent } from "@synoptic/types";
 import type { CompatEvent, CompatOrder, RuntimeStoreContract } from "./runtime-store.js";
 import { mapEventName, toCompatStatus } from "./runtime-store.js";
 
 export class DbRuntimeStore implements RuntimeStoreContract {
   private readonly orders = new Map<string, CompatOrder>();
+  private readonly db: SynopticDb | undefined;
 
-  constructor(private readonly repos: Repositories) {}
+  constructor(private readonly repos: Repositories, db?: SynopticDb) {
+    this.db = db;
+  }
 
   async listAgents() {
     return this.repos.agentRepo.list();
@@ -148,6 +152,225 @@ export class DbRuntimeStore implements RuntimeStoreContract {
       chain,
       data
     });
+  }
+
+  async upsertStreamBlock(input: {
+    blockNumber: number;
+    blockHash?: string;
+    parentHash?: string;
+    timestamp?: number;
+    transactionCount: number;
+    gasUsed?: string;
+    gasLimit?: string;
+    rawPayload?: Record<string, unknown>;
+  }) {
+    if (!this.db) {
+      return { id: randomUUID(), blockNumber: input.blockNumber };
+    }
+    const [row] = await this.db
+      .insert(streamBlocks)
+      .values({
+        blockNumber: input.blockNumber,
+        blockHash: input.blockHash,
+        parentHash: input.parentHash,
+        timestamp: input.timestamp,
+        transactionCount: input.transactionCount,
+        gasUsed: input.gasUsed,
+        gasLimit: input.gasLimit,
+        rawPayload: input.rawPayload
+      })
+      .onConflictDoUpdate({
+        target: streamBlocks.blockNumber,
+        set: {
+          blockHash: input.blockHash,
+          transactionCount: input.transactionCount,
+          gasUsed: input.gasUsed,
+          receivedAt: new Date()
+        }
+      })
+      .returning({ id: streamBlocks.id, blockNumber: streamBlocks.blockNumber });
+    return row!;
+  }
+
+  async insertDerivedTransfer(input: {
+    blockNumber: number;
+    txHash: string;
+    logIndex: number;
+    fromAddress: string;
+    toAddress: string;
+    tokenAddress: string;
+    amount?: string;
+    tokenSymbol?: string;
+  }) {
+    if (!this.db) return { id: randomUUID() };
+    const [row] = await this.db
+      .insert(derivedTransfers)
+      .values(input)
+      .onConflictDoNothing()
+      .returning({ id: derivedTransfers.id });
+    return row ?? { id: randomUUID() };
+  }
+
+  async upsertContractActivity(input: {
+    contractAddress: string;
+    blockStart: number;
+    blockEnd: number;
+    txCount: number;
+    uniqueCallers: number;
+    failedTxCount: number;
+    totalGasUsed?: string;
+  }) {
+    if (!this.db) return { id: randomUUID() };
+    const [row] = await this.db
+      .insert(derivedContractActivity)
+      .values(input)
+      .onConflictDoUpdate({
+        target: [
+          derivedContractActivity.contractAddress,
+          derivedContractActivity.blockStart,
+          derivedContractActivity.blockEnd
+        ],
+        set: {
+          txCount: input.txCount,
+          uniqueCallers: input.uniqueCallers,
+          failedTxCount: input.failedTxCount,
+          totalGasUsed: input.totalGasUsed,
+          computedAt: new Date()
+        }
+      })
+      .returning({ id: derivedContractActivity.id });
+    return row!;
+  }
+
+  async queryStreamBlocks(limit = 50) {
+    if (!this.db) return [];
+    const rows = await this.db
+      .select()
+      .from(streamBlocks)
+      .orderBy(desc(streamBlocks.blockNumber))
+      .limit(limit);
+    return rows.map((r) => ({
+      id: r.id,
+      blockNumber: r.blockNumber,
+      blockHash: r.blockHash ?? undefined,
+      transactionCount: r.transactionCount,
+      gasUsed: r.gasUsed ?? undefined,
+      timestamp: r.timestamp ?? undefined,
+      receivedAt: r.receivedAt.toISOString()
+    }));
+  }
+
+  async queryDerivedTransfers(limit = 50) {
+    if (!this.db) return [];
+    const rows = await this.db
+      .select()
+      .from(derivedTransfers)
+      .orderBy(desc(derivedTransfers.createdAt))
+      .limit(limit);
+    return rows.map((r) => ({
+      id: r.id,
+      blockNumber: r.blockNumber,
+      txHash: r.txHash,
+      fromAddress: r.fromAddress,
+      toAddress: r.toAddress,
+      tokenAddress: r.tokenAddress,
+      amount: r.amount ?? undefined,
+      createdAt: r.createdAt.toISOString()
+    }));
+  }
+
+  async queryContractActivity(limit = 50) {
+    if (!this.db) return [];
+    const rows = await this.db
+      .select()
+      .from(derivedContractActivity)
+      .orderBy(desc(derivedContractActivity.computedAt))
+      .limit(limit);
+    return rows.map((r) => ({
+      id: r.id,
+      contractAddress: r.contractAddress,
+      blockStart: r.blockStart,
+      blockEnd: r.blockEnd,
+      txCount: r.txCount,
+      uniqueCallers: r.uniqueCallers,
+      computedAt: r.computedAt.toISOString()
+    }));
+  }
+
+  async createPurchase(input: {
+    agentId?: string;
+    sku: string;
+    params?: Record<string, unknown>;
+    paymentId?: string;
+    status: string;
+    resultHash?: string;
+    resultPayload?: Record<string, unknown>;
+  }) {
+    if (!this.db) {
+      const id = randomUUID();
+      const now = new Date().toISOString();
+      return { id, sku: input.sku, status: input.status, createdAt: now };
+    }
+    const [row] = await this.db
+      .insert(marketplacePurchases)
+      .values({
+        agentId: input.agentId,
+        sku: input.sku,
+        params: input.params ?? {},
+        paymentId: input.paymentId,
+        status: input.status,
+        resultHash: input.resultHash,
+        resultPayload: input.resultPayload
+      })
+      .returning();
+    return {
+      id: row!.id,
+      sku: row!.sku,
+      status: row!.status,
+      createdAt: row!.createdAt.toISOString()
+    };
+  }
+
+  async getPurchase(id: string) {
+    if (!this.db) return undefined;
+    const [row] = await this.db
+      .select()
+      .from(marketplacePurchases)
+      .where(eq(marketplacePurchases.id, id))
+      .limit(1);
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      agentId: row.agentId ?? undefined,
+      sku: row.sku,
+      params: (row.params as Record<string, unknown>) ?? undefined,
+      paymentId: row.paymentId ?? undefined,
+      status: row.status,
+      resultHash: row.resultHash ?? undefined,
+      resultPayload: (row.resultPayload as Record<string, unknown>) ?? undefined,
+      createdAt: row.createdAt.toISOString()
+    };
+  }
+
+  async listPurchases(agentId?: string) {
+    if (!this.db) return [];
+    const query = this.db
+      .select()
+      .from(marketplacePurchases)
+      .orderBy(desc(marketplacePurchases.createdAt))
+      .limit(100);
+    const rows = agentId
+      ? await this.db.select().from(marketplacePurchases).where(eq(marketplacePurchases.agentId, agentId)).orderBy(desc(marketplacePurchases.createdAt)).limit(100)
+      : await query;
+    return rows.map((r) => ({
+      id: r.id,
+      agentId: r.agentId ?? undefined,
+      sku: r.sku,
+      paymentId: r.paymentId ?? undefined,
+      status: r.status,
+      resultHash: r.resultHash ?? undefined,
+      createdAt: r.createdAt.toISOString()
+    }));
   }
 
   async compatAgents() {

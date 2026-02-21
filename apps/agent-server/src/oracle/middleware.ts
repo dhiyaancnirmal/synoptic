@@ -1,10 +1,14 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
+import { parseUnits } from "ethers";
 import { canSpend, type PaymentAdapter } from "@synoptic/agent-core";
 import type { ActivityEvent, Payment } from "@synoptic/types";
 import type { RuntimeStoreContract } from "../state/runtime-store.js";
 
 const DEFAULT_PAYMENT_USD = 0.25;
+const DEFAULT_PAYMENT_ASSET_DECIMALS = 6;
 const DEFAULT_SERVICE_URL = "/oracle/price";
+const LEGACY_KITE_SCHEME = "gokite-aa";
+const FACILITATOR_SCHEME = "exact";
 
 interface OraclePaymentDeps {
   store: RuntimeStoreContract;
@@ -12,6 +16,7 @@ interface OraclePaymentDeps {
   network: string;
   payToAddress: string;
   paymentAssetAddress: string;
+  paymentAssetDecimals: number;
   budgetResetTimeZone: string;
   enforceLocalBudget: boolean;
   onPayment?: (payment: Payment) => void;
@@ -22,6 +27,270 @@ function parsePaymentUsd(request: FastifyRequest): number {
   const raw = (request.query as { costUsd?: string } | undefined)?.costUsd;
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_PAYMENT_USD;
+}
+
+function normalizeDecimals(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_PAYMENT_ASSET_DECIMALS;
+  return Math.min(18, Math.floor(value));
+}
+
+function toAtomicAmount(amountUsd: number, decimals: number): string {
+  const normalizedDecimals = normalizeDecimals(decimals);
+  const asDecimal = amountUsd.toFixed(normalizedDecimals);
+  return parseUnits(asDecimal, normalizedDecimals).toString();
+}
+
+function readString(obj: Record<string, unknown>, key: string): string | undefined {
+  const value = obj[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function tryJson(value: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed && typeof parsed === "object") return parsed as Record<string, unknown>;
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function decodeBase64(value: string): string | undefined {
+  try {
+    return Buffer.from(value, "base64").toString("utf-8");
+  } catch {
+    return undefined;
+  }
+}
+
+function decodeBase64Url(value: string): string | undefined {
+  try {
+    const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
+    return Buffer.from(padded, "base64").toString("utf-8");
+  } catch {
+    return undefined;
+  }
+}
+
+function parseXPaymentHeader(value: string): Record<string, unknown> | undefined {
+  const raw = value.trim();
+  if (!raw) return undefined;
+  const direct = tryJson(raw);
+  if (direct) return direct;
+  const fromB64 = decodeBase64(raw);
+  if (fromB64) {
+    const parsed = tryJson(fromB64);
+    if (parsed) return parsed;
+  }
+  const fromB64Url = decodeBase64Url(raw);
+  if (fromB64Url) {
+    const parsed = tryJson(fromB64Url);
+    if (parsed) return parsed;
+  }
+  return undefined;
+}
+
+function maskAddress(value: string | undefined): string | undefined {
+  if (!value || value.length < 10) return value;
+  return `${value.slice(0, 8)}...${value.slice(-6)}`;
+}
+
+function summarizeXPayment(value: string): Record<string, unknown> {
+  const parsed = parseXPaymentHeader(value);
+  if (!parsed) {
+    return { parsed: false, headerLength: value.length };
+  }
+
+  const payload =
+    parsed.payload && typeof parsed.payload === "object"
+      ? (parsed.payload as Record<string, unknown>)
+      : undefined;
+  const authorization =
+    payload?.authorization && typeof payload.authorization === "object"
+      ? (payload.authorization as Record<string, unknown>)
+      : undefined;
+
+  return {
+    parsed: true,
+    headerLength: value.length,
+    scheme: readString(parsed, "scheme"),
+    network: readString(parsed, "network"),
+    hasPayload: Boolean(payload),
+    hasAuthorization: Boolean(authorization),
+    paymentRequestId: readString(parsed, "paymentRequestId"),
+    payer: maskAddress(readString(authorization ?? {}, "payer")),
+    payee: maskAddress(readString(authorization ?? {}, "payee")),
+    amount: readString(authorization ?? {}, "amount")
+  };
+}
+
+function normalizeFacilitatorNetwork(value: string): string {
+  const raw = value.trim();
+  if (raw === "kite-testnet") return "eip155:2368";
+  if (raw === "kite") return "eip155:2366";
+  return raw;
+}
+
+function normalizeFacilitatorScheme(value: string): string {
+  const raw = value.trim();
+  if (!raw) return FACILITATOR_SCHEME;
+  if (raw === LEGACY_KITE_SCHEME) return FACILITATOR_SCHEME;
+  return raw;
+}
+
+function facilitatorVersionForNetwork(network: string): number {
+  return network.startsWith("eip155:") ? 2 : 1;
+}
+
+function buildFacilitatorRequirements(input: {
+  paymentRequestId: string;
+  amountAtomic: string;
+  amountUsd: string;
+  pair: string;
+  deps: OraclePaymentDeps;
+}): Record<string, unknown> {
+  const network = normalizeFacilitatorNetwork(input.deps.network);
+  const scheme = FACILITATOR_SCHEME;
+  const x402Version = facilitatorVersionForNetwork(network);
+  return {
+    x402Version,
+    scheme,
+    network,
+    asset: input.deps.paymentAssetAddress,
+    payTo: input.deps.payToAddress,
+    maxAmountRequired: input.amountAtomic,
+    maxTimeoutSeconds: 120,
+    accepts: [
+      {
+        x402Version,
+        scheme,
+        network,
+        maxAmountRequired: input.amountAtomic,
+        resource: DEFAULT_SERVICE_URL,
+        description: "Synoptic Oracle Price API",
+        payTo: input.deps.payToAddress,
+        asset: input.deps.paymentAssetAddress,
+        merchantName: "Synoptic Oracle"
+      }
+    ],
+    paymentRequestId: input.paymentRequestId,
+    amountUsd: input.amountUsd,
+    pair: input.pair
+  };
+}
+
+function normalizePaymentRequirements(
+  source: Record<string, unknown>,
+  fallback: Record<string, unknown>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...source };
+  const fallbackScheme = readString(fallback, "scheme") ?? FACILITATOR_SCHEME;
+  const fallbackNetwork = readString(fallback, "network") ?? "eip155:2368";
+
+  const sourceAccepts = Array.isArray(source.accepts)
+    ? (source.accepts as unknown[])
+    : [];
+  const normalizedAccepts = sourceAccepts.map((entry) => {
+    if (!entry || typeof entry !== "object") return entry as unknown;
+    const item = { ...(entry as Record<string, unknown>) };
+    const scheme = normalizeFacilitatorScheme(readString(item, "scheme") ?? fallbackScheme);
+    const network = normalizeFacilitatorNetwork(readString(item, "network") ?? fallbackNetwork);
+    item.scheme = scheme;
+    item.network = network;
+    if (!readString(item, "maxAmountRequired")) {
+      item.maxAmountRequired = readString(fallback, "maxAmountRequired");
+    }
+    if (!readString(item, "asset")) {
+      item.asset = readString(fallback, "asset");
+    }
+    if (!readString(item, "payTo")) {
+      item.payTo = readString(fallback, "payTo");
+    }
+    if (typeof item.x402Version !== "number") {
+      item.x402Version = facilitatorVersionForNetwork(network);
+    }
+    return item;
+  });
+
+  const scheme = normalizeFacilitatorScheme(readString(out, "scheme") ?? fallbackScheme);
+  const network = normalizeFacilitatorNetwork(readString(out, "network") ?? fallbackNetwork);
+  out.scheme = scheme;
+  out.network = network;
+  out.x402Version =
+    typeof out.x402Version === "number" ? out.x402Version : facilitatorVersionForNetwork(network);
+  if (!readString(out, "maxAmountRequired")) {
+    out.maxAmountRequired = readString(fallback, "maxAmountRequired");
+  }
+  if (!readString(out, "asset")) {
+    out.asset = readString(fallback, "asset");
+  }
+  if (!readString(out, "payTo")) {
+    out.payTo = readString(fallback, "payTo");
+  }
+  out.accepts = normalizedAccepts.length > 0 ? normalizedAccepts : fallback.accepts;
+  return out;
+}
+
+function normalizePaymentPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...payload };
+
+  // Kite MCP often nests authorization/signature under `payload`.
+  const nested =
+    out.payload && typeof out.payload === "object"
+      ? (out.payload as Record<string, unknown>)
+      : undefined;
+  if (nested) {
+    if (out.authorization === undefined && nested.authorization !== undefined) {
+      out.authorization = nested.authorization;
+    }
+    if (out.signature === undefined && nested.signature !== undefined) {
+      out.signature = nested.signature;
+    }
+  }
+
+  const schemeRaw = readString(out, "scheme");
+  if (schemeRaw) out.scheme = normalizeFacilitatorScheme(schemeRaw);
+  const networkRaw = readString(out, "network");
+  if (networkRaw) {
+    const normalized = normalizeFacilitatorNetwork(networkRaw);
+    out.network = normalized;
+    if (typeof out.x402Version !== "number") {
+      out.x402Version = facilitatorVersionForNetwork(normalized);
+    }
+  }
+
+  return out;
+}
+
+function prepareFacilitatorXPayment(
+  paymentHeader: string,
+  fallbackRequirements: Record<string, unknown>
+): string {
+  const parsed = parseXPaymentHeader(paymentHeader);
+  if (!parsed) return paymentHeader;
+
+  const hasEnvelope =
+    parsed.paymentPayload !== undefined || parsed.paymentRequirements !== undefined;
+
+  const payloadRaw = hasEnvelope
+    ? parsed.paymentPayload
+    : parsed;
+  const paymentPayload =
+    payloadRaw && typeof payloadRaw === "object"
+      ? normalizePaymentPayload(payloadRaw as Record<string, unknown>)
+      : normalizePaymentPayload({});
+
+  const requirementsRaw =
+    hasEnvelope && parsed.paymentRequirements && typeof parsed.paymentRequirements === "object"
+      ? (parsed.paymentRequirements as Record<string, unknown>)
+      : {};
+  const paymentRequirements = normalizePaymentRequirements(requirementsRaw, fallbackRequirements);
+
+  return JSON.stringify({
+    paymentPayload,
+    paymentRequirements
+  });
 }
 
 const dayFormatterCache = new Map<string, Intl.DateTimeFormat>();
@@ -100,7 +369,7 @@ async function emitActivity(
 }
 
 function buildChallenge(
-  input: { requestId: string; amountUsd: number; pair: string },
+  input: { requestId: string; amountUsd: number; amountAtomic: string; pair: string },
   deps: OraclePaymentDeps
 ) {
   const challenge = {
@@ -109,13 +378,13 @@ function buildChallenge(
     network: deps.network,
     asset: deps.paymentAssetAddress,
     payTo: deps.payToAddress,
-    maxAmountRequired: input.amountUsd.toFixed(2),
+    maxAmountRequired: input.amountAtomic,
     maxTimeoutSeconds: 120,
     accepts: [
       {
         scheme: "gokite-aa",
         network: deps.network,
-        maxAmountRequired: input.amountUsd.toFixed(2),
+        maxAmountRequired: input.amountAtomic,
         resource: DEFAULT_SERVICE_URL,
         description: "Synoptic Oracle Price API",
         mimeType: "application/json",
@@ -152,6 +421,235 @@ function buildChallenge(
   return challenge;
 }
 
+export interface X402ResourceOptions {
+  resourcePath: string;
+  description: string;
+  merchantName: string;
+  costUsd?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export async function requireX402PaymentForResource(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  deps: OraclePaymentDeps,
+  resource: X402ResourceOptions
+): Promise<boolean> {
+  const agentId = await resolveAgentId(request, deps.store);
+  if (!agentId) {
+    reply.status(400).send({ code: "NO_AGENT", message: "No agent available for payment routing" });
+    return false;
+  }
+
+  const paymentUsd = resource.costUsd ?? parsePaymentUsd(request);
+  const paymentAmountAtomic = toAtomicAmount(paymentUsd, deps.paymentAssetDecimals);
+  const pair = ((request.query as { pair?: string } | undefined)?.pair ?? "").toUpperCase() || resource.resourcePath;
+  const payment = request.headers["x-payment"];
+  if (typeof payment !== "string" || payment.length === 0) {
+    const created = await deps.store.createPayment({
+      agentId,
+      direction: "outgoing",
+      amountWei: paymentAmountAtomic,
+      amountUsd: paymentUsd.toFixed(2),
+      tokenAddress: deps.paymentAssetAddress,
+      serviceUrl: resource.resourcePath,
+      status: "requested"
+    });
+
+    const network = normalizeFacilitatorNetwork(deps.network);
+    const scheme = FACILITATOR_SCHEME;
+    const x402Version = facilitatorVersionForNetwork(network);
+    const challenge = {
+      x402Version,
+      scheme: "gokite-aa",
+      network: deps.network,
+      asset: deps.paymentAssetAddress,
+      payTo: deps.payToAddress,
+      maxAmountRequired: paymentAmountAtomic,
+      maxTimeoutSeconds: 120,
+      accepts: [
+        {
+          scheme: "gokite-aa",
+          network: deps.network,
+          maxAmountRequired: paymentAmountAtomic,
+          resource: resource.resourcePath,
+          description: resource.description,
+          mimeType: "application/json",
+          payTo: deps.payToAddress,
+          maxTimeoutSeconds: 120,
+          asset: deps.paymentAssetAddress,
+          extra: resource.metadata ?? null,
+          merchantName: resource.merchantName
+        }
+      ],
+      paymentRequestId: created.id,
+      amountUsd: paymentUsd.toFixed(2),
+      ...(resource.metadata ?? {})
+    };
+
+    await deps.store.updatePaymentStatus(created.id, "requested", {
+      facilitatorResponse: {
+        stage: "challenge_issued",
+        amountUsd: paymentUsd.toFixed(2),
+        amountAtomic: paymentAmountAtomic,
+        payTo: deps.payToAddress,
+        asset: deps.paymentAssetAddress
+      }
+    });
+    const requested = await deps.store.getPayment(created.id);
+    if (requested) deps.onPayment?.(requested);
+    await emitActivity(deps, {
+      agentId,
+      eventType: "payment.requested",
+      paymentId: created.id,
+      data: { resource: resource.resourcePath, amountUsd: created.amountUsd }
+    });
+
+    reply.status(402).send({ ...challenge, message: "Payment required" });
+    return false;
+  }
+
+  const paymentRecordIdHeader = request.headers["x-payment-request-id"];
+  const paymentRecordId =
+    typeof paymentRecordIdHeader === "string" && paymentRecordIdHeader.length > 0
+      ? paymentRecordIdHeader
+      : undefined;
+  const existing = paymentRecordId ? await deps.store.getPayment(paymentRecordId) : undefined;
+  const candidate =
+    existing ??
+    (await deps.store.createPayment({
+      agentId,
+      direction: "outgoing",
+      amountWei: paymentAmountAtomic,
+      amountUsd: paymentUsd.toFixed(2),
+      tokenAddress: deps.paymentAssetAddress,
+      serviceUrl: resource.resourcePath,
+      status: "requested"
+    }));
+
+  const facilitatorRequirements = buildFacilitatorRequirements({
+    paymentRequestId: candidate.id,
+    amountAtomic: paymentAmountAtomic,
+    amountUsd: paymentUsd.toFixed(2),
+    pair,
+    deps
+  });
+  const preparedPayment = prepareFacilitatorXPayment(payment, facilitatorRequirements);
+
+  request.log.info(
+    {
+      paymentRequestId: candidate.id,
+      resource: resource.resourcePath,
+      paymentAmountAtomic,
+      paymentAmountUsd: paymentUsd.toFixed(2)
+    },
+    "x402 verify attempt (resource)"
+  );
+
+  const authorized = await deps.paymentAdapter.verify(preparedPayment);
+  if (!authorized.authorized) {
+    const reason = authorized.reason ?? "unauthorized";
+    request.log.warn({ paymentRequestId: candidate.id, reason }, "x402 verify rejected (resource)");
+    const failed = await deps.store.updatePaymentStatus(candidate.id, "failed", {
+      facilitatorResponse: { stage: "verify", reason }
+    });
+    if (failed) deps.onPayment?.(failed);
+    await emitActivity(deps, {
+      agentId,
+      eventType: "payment.failed",
+      paymentId: candidate.id,
+      data: { stage: "verify", reason }
+    });
+    reply.status(402).send({
+      code: "PAYMENT_VERIFY_FAILED",
+      message: "Payment verification failed",
+      reason,
+      paymentRequestId: candidate.id
+    });
+    return false;
+  }
+
+  const authorizedPayment = await deps.store.updatePaymentStatus(candidate.id, "authorized", {
+    facilitatorResponse: { stage: "authorized" }
+  });
+  if (authorizedPayment) deps.onPayment?.(authorizedPayment);
+  await emitActivity(deps, {
+    agentId,
+    eventType: "payment.authorized",
+    paymentId: candidate.id,
+    data: { resource: resource.resourcePath, amountUsd: candidate.amountUsd }
+  });
+
+  const agent = await deps.store.getAgent(agentId);
+  if (!agent) {
+    reply.status(404).send({ code: "AGENT_NOT_FOUND", message: "Agent not found" });
+    return false;
+  }
+  const allPayments = await deps.store.listPayments();
+  const today = dayBucket(new Date().toISOString(), deps.budgetResetTimeZone);
+  const spentToday = allPayments
+    .filter((entry) => entry.agentId === agentId && entry.status === "settled" && entry.settledAt)
+    .filter((entry) => dayBucket(entry.settledAt ?? entry.createdAt, deps.budgetResetTimeZone) === today)
+    .reduce((sum, entry) => sum + Number(entry.amountUsd), 0);
+  const withinBudget = canSpend(spentToday, Number(agent.dailyBudgetUsd), paymentUsd);
+  if (deps.enforceLocalBudget && !withinBudget) {
+    const failed = await deps.store.updatePaymentStatus(candidate.id, "failed", {
+      facilitatorResponse: { stage: "budget", reason: "daily_budget_exceeded" }
+    });
+    if (failed) deps.onPayment?.(failed);
+    await emitActivity(deps, {
+      agentId,
+      eventType: "payment.failed",
+      paymentId: candidate.id,
+      data: { stage: "budget", reason: "daily_budget_exceeded" }
+    });
+    reply.status(403).send({
+      code: "BUDGET_EXCEEDED",
+      message: "Daily budget exceeded for agent",
+      details: { spentTodayUsd: spentToday.toFixed(2), dailyBudgetUsd: agent.dailyBudgetUsd }
+    });
+    return false;
+  }
+
+  const result = await deps.paymentAdapter.settle(preparedPayment);
+  if (!result.settled) {
+    const reason = result.reason ?? "settlement_failed";
+    request.log.warn({ paymentRequestId: candidate.id, reason }, "x402 settle rejected (resource)");
+    const failed = await deps.store.updatePaymentStatus(candidate.id, "failed", {
+      facilitatorResponse: { stage: "settle", reason }
+    });
+    if (failed) deps.onPayment?.(failed);
+    await emitActivity(deps, {
+      agentId,
+      eventType: "payment.failed",
+      paymentId: candidate.id,
+      data: { stage: "settle", reason }
+    });
+    reply.status(402).send({
+      code: "PAYMENT_SETTLE_FAILED",
+      message: "Payment settlement failed",
+      reason,
+      paymentRequestId: candidate.id
+    });
+    return false;
+  }
+
+  const settled = await deps.store.updatePaymentStatus(candidate.id, "settled", {
+    kiteTxHash: result.txHash,
+    facilitatorResponse: { stage: "settled" }
+  });
+  if (settled) deps.onPayment?.(settled);
+  await emitActivity(deps, {
+    agentId,
+    eventType: "payment.settled",
+    paymentId: candidate.id,
+    data: { txHash: result.txHash, amountUsd: candidate.amountUsd, resource: resource.resourcePath }
+  });
+  await deps.store.setAgentSpentTodayUsd(agentId, (spentToday + paymentUsd).toFixed(2));
+
+  return true;
+}
+
 export async function requireX402Payment(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -164,13 +662,14 @@ export async function requireX402Payment(
   }
 
   const paymentUsd = parsePaymentUsd(request);
+  const paymentAmountAtomic = toAtomicAmount(paymentUsd, deps.paymentAssetDecimals);
   const pair = ((request.query as { pair?: string } | undefined)?.pair ?? "ETH/USDT").toUpperCase();
   const payment = request.headers["x-payment"];
   if (typeof payment !== "string" || payment.length === 0) {
     const created = await deps.store.createPayment({
       agentId,
       direction: "outgoing",
-      amountWei: "0",
+      amountWei: paymentAmountAtomic,
       amountUsd: paymentUsd.toFixed(2),
       tokenAddress: deps.paymentAssetAddress,
       serviceUrl: DEFAULT_SERVICE_URL,
@@ -180,12 +679,19 @@ export async function requireX402Payment(
       {
         requestId: created.id,
         amountUsd: paymentUsd,
+        amountAtomic: paymentAmountAtomic,
         pair
       },
       deps
     );
     await deps.store.updatePaymentStatus(created.id, "requested", {
-      facilitatorResponse: { stage: "challenge_issued" }
+      facilitatorResponse: {
+        stage: "challenge_issued",
+        amountUsd: paymentUsd.toFixed(2),
+        amountAtomic: paymentAmountAtomic,
+        payTo: deps.payToAddress,
+        asset: deps.paymentAssetAddress
+      }
     });
     const requested = await deps.store.getPayment(created.id);
     if (requested) deps.onPayment?.(requested);
@@ -216,26 +722,70 @@ export async function requireX402Payment(
     (await deps.store.createPayment({
       agentId,
       direction: "outgoing",
-      amountWei: "0",
+      amountWei: paymentAmountAtomic,
       amountUsd: paymentUsd.toFixed(2),
       tokenAddress: deps.paymentAssetAddress,
       serviceUrl: DEFAULT_SERVICE_URL,
       status: "requested"
     }));
 
-  const authorized = await deps.paymentAdapter.verify(payment);
+  const facilitatorRequirements = buildFacilitatorRequirements({
+    paymentRequestId: candidate.id,
+    amountAtomic: paymentAmountAtomic,
+    amountUsd: paymentUsd.toFixed(2),
+    pair,
+    deps
+  });
+  const preparedPayment = prepareFacilitatorXPayment(payment, facilitatorRequirements);
+
+  request.log.info(
+    {
+      paymentRequestId: candidate.id,
+      headerPaymentRequestId: paymentRecordId,
+      paymentAmountAtomic,
+      paymentAmountUsd: paymentUsd.toFixed(2),
+      asset: deps.paymentAssetAddress,
+      payTo: deps.payToAddress,
+      xPayment: summarizeXPayment(payment),
+      facilitatorXPayment: summarizeXPayment(preparedPayment)
+    },
+    "x402 verify attempt"
+  );
+
+  const authorized = await deps.paymentAdapter.verify(preparedPayment);
   if (!authorized.authorized) {
+    const reason = authorized.reason ?? "unauthorized";
+    request.log.warn(
+      {
+        paymentRequestId: candidate.id,
+        headerPaymentRequestId: paymentRecordId,
+        reason,
+        xPayment: summarizeXPayment(payment),
+        facilitatorXPayment: summarizeXPayment(preparedPayment)
+      },
+      "x402 verify rejected"
+    );
     const failed = await deps.store.updatePaymentStatus(candidate.id, "failed", {
-      facilitatorResponse: { stage: "verify", reason: authorized.reason ?? "unauthorized" }
+      facilitatorResponse: {
+        stage: "verify",
+        reason,
+        paymentRequestId: candidate.id,
+        headerPaymentRequestId: paymentRecordId
+      }
     });
     if (failed) deps.onPayment?.(failed);
     await emitActivity(deps, {
       agentId,
       eventType: "payment.failed",
       paymentId: candidate.id,
-      data: { stage: "verify", reason: authorized.reason ?? "unauthorized" }
+      data: { stage: "verify", reason }
     });
-    reply.status(402).send({ code: "PAYMENT_VERIFY_FAILED", message: "Payment verification failed" });
+    reply.status(402).send({
+      code: "PAYMENT_VERIFY_FAILED",
+      message: "Payment verification failed",
+      reason,
+      paymentRequestId: candidate.id
+    });
     return false;
   }
 
@@ -289,19 +839,34 @@ export async function requireX402Payment(
     return false;
   }
 
-  const result = await deps.paymentAdapter.settle(payment);
+  const result = await deps.paymentAdapter.settle(preparedPayment);
   if (!result.settled) {
+    const reason = result.reason ?? "settlement_failed";
+    request.log.warn(
+      {
+        paymentRequestId: candidate.id,
+        reason,
+        xPayment: summarizeXPayment(payment),
+        facilitatorXPayment: summarizeXPayment(preparedPayment)
+      },
+      "x402 settle rejected"
+    );
     const failed = await deps.store.updatePaymentStatus(candidate.id, "failed", {
-      facilitatorResponse: { stage: "settle", reason: result.reason ?? "settlement_failed" }
+      facilitatorResponse: { stage: "settle", reason }
     });
     if (failed) deps.onPayment?.(failed);
     await emitActivity(deps, {
       agentId,
       eventType: "payment.failed",
       paymentId: candidate.id,
-      data: { stage: "settle", reason: result.reason ?? "settlement_failed" }
+      data: { stage: "settle", reason }
     });
-    reply.status(402).send({ code: "PAYMENT_SETTLE_FAILED", message: "Payment settlement failed" });
+    reply.status(402).send({
+      code: "PAYMENT_SETTLE_FAILED",
+      message: "Payment settlement failed",
+      reason,
+      paymentRequestId: candidate.id
+    });
     return false;
   }
 

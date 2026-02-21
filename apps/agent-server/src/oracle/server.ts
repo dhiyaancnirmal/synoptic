@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { RuntimeStoreContract } from "../state/runtime-store.js";
 import { WsHub } from "../ws/hub.js";
 import { RealFacilitatorPaymentAdapter } from "./facilitator.js";
+import { DemoPaymentAdapter } from "./demo-facilitator.js";
 import { requireX402Payment } from "./middleware.js";
 
 async function fetchEthUsdPrice(fetcher: typeof fetch = fetch): Promise<number> {
@@ -27,15 +28,20 @@ export async function registerOracleRoutes(
     wsHub: WsHub;
     budgetResetTimeZone: string;
     facilitatorUrl: string;
+    facilitatorMode: "real" | "demo";
     network: string;
     payToAddress: string;
     paymentAssetAddress: string;
+    paymentAssetDecimals: number;
   }
 ): Promise<void> {
-  const paymentAdapter = new RealFacilitatorPaymentAdapter({
-    baseUrl: deps.facilitatorUrl,
-    network: deps.network
-  });
+  const paymentAdapter =
+    deps.facilitatorMode === "demo"
+      ? new DemoPaymentAdapter()
+      : new RealFacilitatorPaymentAdapter({
+          baseUrl: deps.facilitatorUrl,
+          network: deps.network
+        });
 
   app.get("/oracle/price", async (request, reply) => {
     const allowed = await requireX402Payment(request, reply, {
@@ -44,6 +50,7 @@ export async function registerOracleRoutes(
       network: deps.network,
       payToAddress: deps.payToAddress,
       paymentAssetAddress: deps.paymentAssetAddress,
+      paymentAssetDecimals: deps.paymentAssetDecimals,
       budgetResetTimeZone: deps.budgetResetTimeZone,
       enforceLocalBudget: false,
       onPayment(payment) {

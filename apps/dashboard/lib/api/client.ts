@@ -41,6 +41,23 @@ interface SiweChallengeResponse {
   expiresAt: string;
 }
 
+export interface MarketplaceCatalogItem {
+  sku: string;
+  name: string;
+  description: string;
+  priceUsd: number;
+  dataSource: string;
+}
+
+export interface MarketplacePurchase {
+  id: string;
+  sku: string;
+  paymentId?: string;
+  status: string;
+  resultHash?: string;
+  createdAt: string;
+}
+
 export interface ApiClient {
   mode: ApiMode;
   getToken: () => Promise<string>;
@@ -55,6 +72,8 @@ export interface ApiClient {
   getTrade: (tradeId: string, token?: string) => Promise<TradeVM | null>;
   listActivity: (token?: string) => Promise<ActivityVM[]>;
   getOraclePrice: (pair: string, xPayment?: string, token?: string) => Promise<OraclePriceResult>;
+  getMarketplaceCatalog: () => Promise<MarketplaceCatalogItem[]>;
+  listMarketplacePurchases: (token?: string) => Promise<MarketplacePurchase[]>;
 }
 
 const API_URL =
@@ -87,7 +106,9 @@ export function createApiClient(mode: ApiMode = DEFAULT_API_MODE): ApiClient {
     listTrades: async (token) => listTrades(resolvedMode, token),
     getTrade: async (tradeId, token) => getTrade(resolvedMode, tradeId, token),
     listActivity: async (token) => listActivity(resolvedMode, token),
-    getOraclePrice: async (pair, xPayment, token) => getOraclePrice(pair, xPayment, token)
+    getOraclePrice: async (pair, xPayment, token) => getOraclePrice(pair, xPayment, token),
+    getMarketplaceCatalog: async () => getMarketplaceCatalog(),
+    listMarketplacePurchases: async (token) => listMarketplacePurchases(token)
   };
 }
 
@@ -510,6 +531,24 @@ function createIdempotencyKey(): string {
   } catch {
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
+}
+
+async function getMarketplaceCatalog(): Promise<MarketplaceCatalogItem[]> {
+  const response = await fetch(`${API_URL}/marketplace/catalog`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new ApiClientError(`Catalog request failed ${response.status}`, response.status);
+  }
+  const data = (await response.json()) as { catalog: MarketplaceCatalogItem[] };
+  return data.catalog ?? [];
+}
+
+async function listMarketplacePurchases(token?: string): Promise<MarketplacePurchase[]> {
+  const payload = await request<{ purchases: MarketplacePurchase[] }>(
+    "/api/marketplace/purchases",
+    {},
+    token
+  );
+  return payload.purchases ?? [];
 }
 
 function unwrapApiPayload<T>(payload: unknown): T {

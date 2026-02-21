@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1771561217838,
+      "tag": "0000_lame_queen_noir",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1771625000000,
+      "tag": "0001_rename_sepolia_tx_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1771700000000,
+      "tag": "0002_add_marketplace_tables",
+      "breakpoints": true
+    }
+  ]
+}

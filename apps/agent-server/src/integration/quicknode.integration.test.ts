@@ -55,8 +55,8 @@ test("POST /webhooks/quicknode/monad with valid token and block data returns 200
   const body = response.json();
   assert.equal(body.ok, true);
   assert.equal(body.received, true);
-  assert.equal(body.blockNumber, "420");
-  assert.equal(body.blockHash, "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
+  assert.equal(body.blocksProcessed, 1);
+  assert.equal(body.lastBlockNumber, 420);
 });
 
 test("POST /webhooks/quicknode/monad with invalid token returns 401", async (t) => {

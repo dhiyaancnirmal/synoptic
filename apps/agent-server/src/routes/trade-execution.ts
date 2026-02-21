@@ -3,6 +3,7 @@ import type { RuntimeStoreContract } from "../state/runtime-store.js";
 import { WsHub } from "../ws/hub.js";
 import { RealTradingAdapter, RealAttestationAdapter, WMON, USDC_MONAD, MONAD_TESTNET_CHAIN_ID } from "@synoptic/agent-core";
 import { RealFacilitatorPaymentAdapter } from "../oracle/facilitator.js";
+import { DemoPaymentAdapter } from "../oracle/demo-facilitator.js";
 import { requireX402Payment } from "../oracle/middleware.js";
 import type { AgentServerEnv } from "../env.js";
 
@@ -14,6 +15,7 @@ interface TradeExecutionDeps {
   network: string;
   payToAddress: string;
   paymentAssetAddress: string;
+  paymentAssetDecimals: number;
   budgetResetTimeZone: string;
 }
 
@@ -43,10 +45,13 @@ export async function registerTradeExecutionRoutes(
   app: FastifyInstance,
   deps: TradeExecutionDeps
 ): Promise<void> {
-  const paymentAdapter = new RealFacilitatorPaymentAdapter({
-    baseUrl: deps.facilitatorUrl,
-    network: deps.network
-  });
+  const paymentAdapter =
+    deps.env.facilitatorMode === "demo"
+      ? new DemoPaymentAdapter()
+      : new RealFacilitatorPaymentAdapter({
+          baseUrl: deps.facilitatorUrl,
+          network: deps.network
+        });
 
   app.post("/trade/quote", async (request, reply) => {
     const allowed = await requireX402Payment(request, reply, {
@@ -55,6 +60,7 @@ export async function registerTradeExecutionRoutes(
       network: deps.network,
       payToAddress: deps.payToAddress,
       paymentAssetAddress: deps.paymentAssetAddress,
+      paymentAssetDecimals: deps.paymentAssetDecimals,
       budgetResetTimeZone: deps.budgetResetTimeZone,
       enforceLocalBudget: false,
       onPayment(payment) {
@@ -121,6 +127,7 @@ export async function registerTradeExecutionRoutes(
       network: deps.network,
       payToAddress: deps.payToAddress,
       paymentAssetAddress: deps.paymentAssetAddress,
+      paymentAssetDecimals: deps.paymentAssetDecimals,
       budgetResetTimeZone: deps.budgetResetTimeZone,
       enforceLocalBudget: false,
       onPayment(payment) {

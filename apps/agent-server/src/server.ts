@@ -11,6 +11,9 @@ import { registerCompatRoutes } from "./routes/compat.js";
 import { registerQuickNodeWebhookRoutes } from "./routes/quicknode.js";
 import { registerTradeExecutionRoutes } from "./routes/trade-execution.js";
 import { registerOracleRoutes } from "./oracle/server.js";
+import { registerMarketplaceRoutes } from "./routes/marketplace.js";
+import { DemoPaymentAdapter } from "./oracle/demo-facilitator.js";
+import { RealFacilitatorPaymentAdapter } from "./oracle/facilitator.js";
 import { sendEvent } from "./ws/handler.js";
 import { WsHub } from "./ws/hub.js";
 import { createDbClient, createRepositories } from "@synoptic/db";
@@ -43,7 +46,7 @@ function createStore(): { store: RuntimeStoreContract; usesDatabase: boolean } {
 
   const db = createDbClient();
   const repos = createRepositories(db);
-  return { store: new DbRuntimeStore(repos), usesDatabase: true };
+  return { store: new DbRuntimeStore(repos, db), usesDatabase: true };
 }
 
 export async function createServer(options: ServerOptions = {}): Promise<FastifyInstance> {
@@ -118,11 +121,14 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     "/webhooks/quicknode/monad",
     "/oracle/price",
     "/trade/quote",
-    "/trade/execute"
+    "/trade/execute",
+    "/marketplace/catalog"
   ]);
   app.addHook("onRequest", async (request, reply) => {
     if (request.method === "OPTIONS") return;
-    if (publicPaths.has(request.url.split("?")[0] ?? request.url)) return;
+    const urlPath = request.url.split("?")[0] ?? request.url;
+    if (publicPaths.has(urlPath)) return;
+    if (urlPath.startsWith("/marketplace/")) return;
 
     const header = request.headers.authorization;
     const token =
@@ -147,7 +153,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     timestamp: new Date().toISOString(),
     dependencies: {
       database: usesDatabase ? "up" : "down",
-      facilitator: "real",
+      facilitator: env.facilitatorMode,
       auth: "passport"
     },
     capabilities: {
@@ -194,9 +200,28 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     wsHub,
     budgetResetTimeZone: env.budgetResetTimeZone,
     facilitatorUrl: env.kiteFacilitatorUrl,
+    facilitatorMode: env.facilitatorMode,
     network: env.kiteNetwork,
     payToAddress: env.kiteServicePayTo,
-    paymentAssetAddress: env.kiteTestUsdtAddress
+    paymentAssetAddress: env.kiteTestUsdtAddress,
+    paymentAssetDecimals: env.kitePaymentAssetDecimals
+  });
+  const marketplacePaymentAdapter =
+    env.facilitatorMode === "demo"
+      ? new DemoPaymentAdapter()
+      : new RealFacilitatorPaymentAdapter({
+          baseUrl: env.kiteFacilitatorUrl,
+          network: env.kiteNetwork
+        });
+  await registerMarketplaceRoutes(app, {
+    store,
+    wsHub,
+    paymentAdapter: marketplacePaymentAdapter,
+    network: env.kiteNetwork,
+    payToAddress: env.kiteServicePayTo,
+    paymentAssetAddress: env.kiteTestUsdtAddress,
+    paymentAssetDecimals: env.kitePaymentAssetDecimals,
+    budgetResetTimeZone: env.budgetResetTimeZone
   });
   await registerTradeExecutionRoutes(app, {
     store,
@@ -206,6 +231,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     network: env.kiteNetwork,
     payToAddress: env.kiteServicePayTo,
     paymentAssetAddress: env.kiteTestUsdtAddress,
+    paymentAssetDecimals: env.kitePaymentAssetDecimals,
     budgetResetTimeZone: env.budgetResetTimeZone
   });
 
