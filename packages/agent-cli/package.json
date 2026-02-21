@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "tsup && node scripts/postbuild.mjs",
-    "dev": "tsx src/index.ts",
+    "dev": "tsup --watch",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
