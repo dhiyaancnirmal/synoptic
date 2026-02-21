@@ -4,6 +4,21 @@ export const UNISWAP_DEFAULT_PROTOCOLS = ["V2", "V3", "V4"] as const;
 export const UNISWAP_UNIVERSAL_ROUTER_VERSION = "2.0";
 export const UNISWAP_CONTENT_TYPE = "application/json";
 
+export type UniswapTradeIntent = "swap" | "order";
+
+export type UniswapRoutingType =
+  | "CLASSIC"
+  | "DUTCH_LIMIT"
+  | "DUTCH_V2"
+  | "LIMIT_ORDER"
+  | "WRAP"
+  | "UNWRAP"
+  | "BRIDGE"
+  | "PRIORITY"
+  | "DUTCH_V3"
+  | "QUICKROUTE"
+  | "CHAINED";
+
 export interface UniswapCheckApprovalRequest {
   walletAddress: string;
   token: string;
@@ -31,14 +46,17 @@ export interface UniswapCheckApprovalResponse {
 export interface UniswapQuoteRequest {
   tokenIn: string;
   tokenOut: string;
-  tokenInChainId: string;
-  tokenOutChainId: string;
+  tokenInChainId: number;
+  tokenOutChainId: number;
   type: "EXACT_INPUT" | "EXACT_OUTPUT";
   amount: string;
   swapper: string;
   routingPreference?: string;
   protocols?: string[];
   slippageTolerance?: number;
+  routingType?: UniswapRoutingType;
+  urgency?: "normal" | "fast";
+  autoSlippage?: boolean;
 }
 
 export interface UniswapQuoteResponse {
@@ -63,4 +81,26 @@ export interface UniswapSwapResponse {
   swap: UniswapUnsignedTransaction;
   gasFee?: string;
   txFailureReasons?: string[];
+}
+
+export interface UniswapSupportedChain {
+  chainId: number;
+  name?: string;
+  supportsSwaps: boolean;
+  supportsLp: boolean;
+}
+
+export interface UniswapSupportedChainsResponse {
+  chains: UniswapSupportedChain[];
+}
+
+export interface UniswapLpRequest {
+  [key: string]: unknown;
+}
+
+export interface UniswapLpResponse {
+  requestId?: string;
+  tx?: UniswapUnsignedTransaction;
+  swap?: UniswapUnsignedTransaction;
+  [key: string]: unknown;
 }

@@ -76,8 +76,11 @@ function buildXPayment(input: {
   });
 }
 
-test("oracle route enforces challenge, settles deterministic payment, and persists payment lifecycle", async (t) => {
+test("oracle route uses Uniswap quote when UNISWAP_API_KEY is configured", async (t) => {
   const previousFetch = globalThis.fetch;
+  const previousUniswapApiKey = process.env.UNISWAP_API_KEY;
+  process.env.UNISWAP_API_KEY = "uniswap-test-key";
+
   globalThis.fetch = (async (input, init) => {
     const url = String(input);
     if (url.includes("/v2/verify")) {
@@ -92,8 +95,74 @@ test("oracle route enforces challenge, settles deterministic payment, and persis
         headers: { "content-type": "application/json" }
       });
     }
-    if (url.includes("api.coingecko.com")) {
-      return new Response(JSON.stringify({ ethereum: { usd: 3210.12 } }), {
+    if (url.includes("trade-api.gateway.uniswap.org/v1/quote")) {
+      const headers = new Headers(init?.headers);
+      assert.equal(headers.get("x-api-key"), "uniswap-test-key");
+      return new Response(
+        JSON.stringify({
+          requestId: "uniswap-quote-1",
+          quote: {
+            output: {
+              amount: "3210123456"
+            }
+          }
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        }
+      );
+    }
+    return previousFetch(input, init);
+  }) as typeof fetch;
+
+  const app = await createServer();
+  const headers = createTestAuthHeaders();
+  t.after(async () => {
+    globalThis.fetch = previousFetch;
+    if (previousUniswapApiKey === undefined) {
+      delete process.env.UNISWAP_API_KEY;
+    } else {
+      process.env.UNISWAP_API_KEY = previousUniswapApiKey;
+    }
+    await app.close();
+  });
+
+  const challenged = await app.inject({
+    method: "GET",
+    url: "/oracle/price?pair=eth/usdt",
+    headers
+  });
+  assert.equal(challenged.statusCode, 402);
+  const challengePayload = challenged.json();
+
+  const paid = await app.inject({
+    method: "GET",
+    url: "/oracle/price?pair=eth/usdt",
+    headers: {
+      ...headers,
+      "x-payment": JSON.stringify({ paymentRequestId: challengePayload.paymentRequestId }),
+      "x-payment-request-id": challengePayload.paymentRequestId
+    }
+  });
+  assert.equal(paid.statusCode, 200);
+  const paidPayload = paid.json();
+  assert.equal(paidPayload.source, "uniswap");
+  assert.equal(paidPayload.price, 3210.123456);
+});
+
+test("oracle route enforces challenge, settles deterministic payment, and persists payment lifecycle", async (t) => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    if (url.includes("/v2/verify")) {
+      return new Response(JSON.stringify({ valid: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+    if (url.includes("/v2/settle")) {
+      return new Response(JSON.stringify({ settled: true, txHash: "0xtestsettlement" }), {
         status: 200,
         headers: { "content-type": "application/json" }
       });

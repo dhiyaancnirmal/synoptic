@@ -1,7 +1,6 @@
 import chalk from "chalk";
 import ora from "ora";
 import { loadWallet } from "../wallet.js";
-import { loadSession } from "../session.js";
 import { resolveConfig } from "../config.js";
 import { runTradingLoop } from "../trading-loop.js";
 import { checkMcpAvailable, createMcpClient, KITE_MCP_SETUP_INSTRUCTIONS } from "../kite-mcp.js";
@@ -22,15 +21,7 @@ export async function startCommand(options: StartOptions = {}): Promise<void> {
   if (!wallet) {
     spinner.fail("No wallet found");
     console.log("");
-    printError("Run `npx @synoptic/agent setup` first");
-    process.exit(1);
-  }
-
-  const session = loadSession();
-  if (!session) {
-    spinner.fail("No session found");
-    console.log("");
-    printError("Run `npx @synoptic/agent setup` first");
+    printError("Run `npx @synoptic/agent init` first");
     process.exit(1);
   }
 
@@ -48,6 +39,17 @@ export async function startCommand(options: StartOptions = {}): Promise<void> {
     spinner.fail("Kite MCP not configured");
     console.log("");
     console.log(KITE_MCP_SETUP_INSTRUCTIONS);
+    process.exit(1);
+  }
+
+  spinner.text = "Validating Kite MCP credentials...";
+  try {
+    const payerAddr = await mcpClient.getPayerAddr();
+    spinner.text = `Using payer ${payerAddr.slice(0, 8)}...${payerAddr.slice(-6)}`;
+  } catch (error) {
+    spinner.fail("Kite MCP authentication failed");
+    console.log("");
+    printError(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 

@@ -34,6 +34,10 @@ export interface TradeVM {
   pair: string;
   amountIn: string;
   amountOut: string;
+  routingType: string;
+  intent?: "swap" | "order";
+  quoteRequestId?: string;
+  swapRequestId?: string;
   chainId?: number;
   executionChain: ActivityChain;
   executionTxHash?: string;
@@ -139,6 +143,16 @@ export function mapTrade(input: unknown): TradeVM {
     pair: `${tokenIn} -> ${tokenOut}`,
     amountIn: canonical.amountIn ?? readString(raw, ["amountIn", "size"]) ?? "0",
     amountOut: canonical.amountOut ?? readString(raw, ["amountOut"]) ?? "0",
+    routingType: readString(raw, ["routingType"]) ?? "CLASSIC",
+    intent:
+      canonical.intent ??
+      (() => {
+        const rawIntent = readString(raw, ["intent"])?.toLowerCase();
+        if (rawIntent === "order" || rawIntent === "swap") return rawIntent;
+        return undefined;
+      })(),
+    quoteRequestId: canonical.quoteRequestId ?? readString(raw, ["quoteRequestId"]),
+    swapRequestId: canonical.swapRequestId ?? readString(raw, ["swapRequestId"]),
     chainId: typeof chainId === "number" ? chainId : undefined,
     executionChain,
     executionTxHash,

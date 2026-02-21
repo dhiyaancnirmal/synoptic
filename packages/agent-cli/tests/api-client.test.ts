@@ -96,7 +96,7 @@ describe("ApiClient envelope unwrapping", () => {
           pair: "ETH/USDT",
           price: 3000.5,
           timestamp: 1234567890,
-          source: "coingecko"
+          source: "local-static"
         }),
         { status: 200, headers: { "content-type": "application/json" } }
       );

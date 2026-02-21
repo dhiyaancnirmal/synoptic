@@ -163,3 +163,30 @@ test("canonical mode maps envelope-backed agents/trades/activity and handles pay
   const unknownPayment = await api.getPayment("payment-does-not-exist", token);
   assert.equal(unknownPayment, null);
 });
+
+test("canonical mode exposes trading/liquidity/marketplace helper methods", async () => {
+  if (!integrationReady) return;
+  const api = apiClientModule.createApiClient("canonical");
+
+  await assert.rejects(
+    async () => api.getTradeSupportedChains(token),
+    (cause: unknown) =>
+      cause instanceof apiClientModule.ApiClientError &&
+      cause.status === 503 &&
+      cause.message.includes("Set AGENT_PRIVATE_KEY")
+  );
+
+  const liquidityActions = await api.listLiquidityActions(10, token);
+  assert.ok(Array.isArray(liquidityActions));
+
+  await assert.rejects(
+    async () => api.quoteLiquidity({ token0: "0x1", token1: "0x2", amount0: "1", amount1: "1" }, token),
+    (cause: unknown) =>
+      cause instanceof apiClientModule.ApiClientError &&
+      cause.status === 503 &&
+      cause.message.includes("UNISWAP_API_KEY")
+  );
+
+  const preview = await api.previewMarketplaceSku("monad_selector_heatmap", { limit: 2 }, token);
+  assert.equal(preview.sku, "monad_selector_heatmap");
+});

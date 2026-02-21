@@ -4,10 +4,10 @@
   "private": true,
   "packageManager": "pnpm@9.15.4",
   "engines": {
-    "node": ">=22.0.0 <23.0.0"
+    "node": ">=22.22.0 <23.0.0"
   },
   "volta": {
-    "node": "22.x",
+    "node": "22.22.0",
     "pnpm": "9.15.4"
   },
   "scripts": {
@@ -35,7 +35,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@types/node": "25.3.0",
+    "@types/node": "22.7.5",
     "eslint": "10.0.0",
     "globals": "17.3.0",
     "lint-staged": "16.2.7",
@@ -48,5 +48,8 @@
     "*.{ts,tsx,js,jsx,mjs,cjs,json,md,yml,yaml}": [
       "prettier --write"
     ]
+  },
+  "dependencies": {
+    "liveline": "^0.0.4"
   }
 }

@@ -11,7 +11,10 @@ npx @synoptic/agent init
 # Fund your wallet (shows faucet links)
 npx @synoptic/agent fund
 
-# Start autonomous trading
+# Start autonomous trading (standalone CLI mode requires headless Kite auth)
+export KITE_MCP_BEARER_TOKEN="<kite token>"
+# optional:
+export KITE_MCP_CLIENT_ID="<kite client id>"
 npx @synoptic/agent start
 
 # Check status
@@ -113,6 +116,10 @@ Config precedence (highest to lowest):
 | `SYNOPTIC_BACKOFF_MS`       | Retry backoff (ms)   | `1000`         |
 | `SYNOPTIC_API_URL`          | Agent server URL     | Production URL |
 | `SYNOPTIC_LOG_LEVEL`        | Log level            | `info`         |
+| `KITE_MCP_BEARER_TOKEN`     | Headless Kite bearer | _(required for standalone `start`)_ |
+| `KITE_MCP_AUTHORIZATION`    | Full Authorization header value | _(alternative to bearer token)_ |
+| `KITE_MCP_CLIENT_ID`        | Kite client id       | _(optional)_   |
+| `SYNOPTIC_ALLOW_CLIENT_ID_ONLY_MCP` | Allow CLIENT_ID-only auth attempts | `false` |
 
 ### Config File (`~/.synoptic/config.json`)
 
@@ -126,9 +133,24 @@ Config precedence (highest to lowest):
 
 ## Kite MCP Setup
 
-x402 payments require Kite Passport MCP configured in your AI agent.
+x402 payments need Kite MCP, but there are two distinct modes:
 
-### Cursor (`~/.cursor/mcp.json`)
+1. AI agent mode (Cursor/Claude/OpenCode assistant calls MCP directly).
+2. Standalone CLI mode (`synoptic-agent start` in a separate Node process).
+
+`synoptic-agent start` does not inherit your Cursor/Claude/OpenCode login session. For standalone mode, export headless auth env vars before running:
+
+```bash
+export KITE_MCP_BEARER_TOKEN="<kite token>"
+# or:
+export KITE_MCP_AUTHORIZATION="Bearer <kite token>"
+# optional:
+export KITE_MCP_CLIENT_ID="<kite client id>"
+```
+
+If you want the AI itself to trade, configure MCP in your AI app and execute the flow there instead of running the standalone loop.
+
+### AI agent MCP config (Cursor: `~/.cursor/mcp.json`)
 
 ```json
 {
@@ -219,7 +241,7 @@ pnpm --filter @synoptic/agent typecheck
 
 ## Known Limitations
 
-1. MCP detection is best-effort - actual availability checked at runtime
+1. Standalone CLI trading requires headless Kite auth env vars; AI MCP sessions are not reused automatically
 2. Faucet funding is manual (agent displays links, human visits)
 3. Testnet-only in current version
 4. No persistent portfolio tracking across sessions

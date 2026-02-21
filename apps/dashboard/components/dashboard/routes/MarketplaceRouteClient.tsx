@@ -1,319 +1,273 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { pingApi } from "@/lib/api/client";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  createApiClient,
+  pingApi,
+  type MarketplaceCatalogItem,
+  type MarketplacePurchase
+} from "@/lib/api/client";
 import { RequireSession } from "@/components/dashboard/RequireSession";
 import { RouteShell } from "@/components/dashboard/RouteShell";
 import { useDashboardRuntime } from "@/lib/state/use-dashboard-runtime";
 
-const API_URL =
-  process.env.NEXT_PUBLIC_AGENT_SERVER_URL ??
-  process.env.NEXT_PUBLIC_API_URL ??
-  "http://localhost:3001";
+const DEFAULT_PARAMS_BY_SKU: Record<string, string> = {
+  monad_lp_range_signal: JSON.stringify({ risk: 0.55, preset: "all" }, null, 2),
+  monad_orderflow_imbalance: JSON.stringify({ limit: 15, windowBlocks: 800 }, null, 2),
+  monad_contract_momentum: JSON.stringify({ limit: 12, minTxCount: 1 }, null, 2),
+  monad_selector_heatmap: JSON.stringify({ limit: 20 }, null, 2),
+  monad_launchpad_watch: JSON.stringify({ limit: 10, minAcceleration: 10 }, null, 2)
+};
 
-interface CatalogItem {
-  sku: string;
-  name: string;
-  description: string;
-  priceUsd: number;
-  dataSource: string;
-}
-
-interface Purchase {
-  id: string;
-  sku: string;
-  paymentId?: string;
-  status: string;
-  resultHash?: string;
-  createdAt: string;
-}
-
-interface PurchaseResult {
-  purchaseId: string;
-  sku: string;
-  paymentId?: string;
-  settlementTxHash?: string;
-  data: unknown[];
-  resultHash: string;
-  timestamp: string;
-}
-
-function formatPrice(usd: number): string {
-  return `$${usd.toFixed(2)}`;
+function parseParams(text: string): Record<string, unknown> {
+  if (!text.trim()) return {};
+  const parsed = JSON.parse(text) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Params must be a JSON object.");
+  }
+  return parsed as Record<string, unknown>;
 }
 
 function truncateHash(hash?: string): string {
   if (!hash) return "—";
-  if (hash.length <= 16) return hash;
+  if (hash.length <= 18) return hash;
   return `${hash.slice(0, 10)}...${hash.slice(-6)}`;
 }
 
 export function MarketplaceRouteClient() {
   const runtime = useDashboardRuntime();
+  const api = useMemo(() => createApiClient(), []);
   const [apiHealth, setApiHealth] = useState("checking");
-  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
-  const [lastResult, setLastResult] = useState<PurchaseResult | null>(null);
-  const [buyingSku, setBuyingSku] = useState<string | null>(null);
-  const [previewData, setPreviewData] = useState<Record<string, unknown[]>>({});
+  const [catalog, setCatalog] = useState<MarketplaceCatalogItem[]>([]);
+  const [purchases, setPurchases] = useState<MarketplacePurchase[]>([]);
+  const [selectedSku, setSelectedSku] = useState<string>("");
+  const [paramsText, setParamsText] = useState("{}");
+  const [previewPayload, setPreviewPayload] = useState<Record<string, unknown> | null>(null);
+  const [purchasePayload, setPurchasePayload] = useState<Record<string, unknown> | null>(null);
+  const [busy, setBusy] = useState<"preview" | "purchase" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void pingApi()
-      .then(setApiHealth)
-      .catch(() => setApiHealth("unreachable"));
-  }, []);
+  const selectedProduct = useMemo(
+    () => catalog.find((item) => item.sku === selectedSku),
+    [catalog, selectedSku]
+  );
 
-  useEffect(() => {
-    fetch(`${API_URL}/marketplace/catalog`, { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data: { catalog: CatalogItem[] }) => setCatalog(data.catalog ?? []))
-      .catch(() => setError("Failed to load catalog"));
-  }, []);
+  const topPurchasedSku = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const purchase of purchases) {
+      counts.set(purchase.sku, (counts.get(purchase.sku) ?? 0) + 1);
+    }
+    const sorted = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+    return sorted[0];
+  }, [purchases]);
+
+  const loadCatalog = useCallback(async () => {
+    const items = await api.getMarketplaceCatalog();
+    setCatalog(items);
+    if (!selectedSku && items[0]) {
+      setSelectedSku(items[0].sku);
+      setParamsText(DEFAULT_PARAMS_BY_SKU[items[0].sku] ?? "{}");
+    }
+  }, [api, selectedSku]);
 
   const loadPurchases = useCallback(async () => {
-    try {
-      const token =
-        typeof window !== "undefined"
-          ? window.sessionStorage.getItem("synoptic.dashboard.session.token") ?? ""
-          : "";
-      const res = await fetch(`${API_URL}/api/marketplace/purchases`, {
-        headers: token ? { authorization: `Bearer ${token}` } : {},
-        cache: "no-store"
-      });
-      if (res.ok) {
-        const data = (await res.json()) as { purchases: Purchase[] };
-        setPurchases(data.purchases ?? []);
-      }
-    } catch {
-      /* ignore */
-    }
+    const rows = await api.listMarketplacePurchases(runtime.token || undefined);
+    setPurchases(rows);
+  }, [api, runtime.token]);
+
+  useEffect(() => {
+    void pingApi().then(setApiHealth).catch(() => setApiHealth("unreachable"));
   }, []);
 
   useEffect(() => {
-    void loadPurchases();
-  }, [loadPurchases]);
-
-  const handlePreview = useCallback(
-    async (sku: string) => {
+    let cancelled = false;
+    async function init(): Promise<void> {
       try {
-        const res = await fetch(`${API_URL}/marketplace/products/${sku}/preview`, {
-          cache: "no-store"
-        });
-        const data = (await res.json()) as { data: unknown[] };
-        setPreviewData((prev) => ({ ...prev, [sku]: data.data ?? [] }));
-      } catch {
-        setError(`Failed to load preview for ${sku}`);
-      }
-    },
-    []
-  );
-
-  const handleBuy = useCallback(
-    async (sku: string) => {
-      setBuyingSku(sku);
-      setError(null);
-      setLastResult(null);
-      try {
-        // Step 1: POST without payment → get 402 challenge
-        const res1 = await fetch(`${API_URL}/marketplace/products/${sku}/purchase`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          cache: "no-store"
-        });
-
-        if (res1.status === 402) {
-          const challenge = await res1.json();
-          // Step 2: Re-POST with x-payment header containing the challenge as payment proof
-          const xPayment = JSON.stringify({
-            paymentPayload: {
-              scheme: challenge.scheme ?? "exact",
-              network: challenge.network ?? "eip155:2368",
-              authorization: {
-                payer: "0xdemo_dashboard_user",
-                payee: challenge.payTo,
-                amount: challenge.maxAmountRequired
-              },
-              signature: "0xdemo_sig"
-            },
-            paymentRequirements: challenge
-          });
-
-          const res2 = await fetch(`${API_URL}/marketplace/products/${sku}/purchase`, {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "x-payment": xPayment,
-              "x-payment-request-id": challenge.paymentRequestId ?? ""
-            },
-            cache: "no-store"
-          });
-
-          if (res2.ok) {
-            const result = (await res2.json()) as PurchaseResult;
-            setLastResult(result);
-            void loadPurchases();
-          } else {
-            const err = (await res2.json().catch(() => ({}))) as { message?: string };
-            setError(err.message ?? `Purchase failed (${res2.status})`);
-          }
-        } else if (res1.ok) {
-          const result = (await res1.json()) as PurchaseResult;
-          setLastResult(result);
-          void loadPurchases();
-        } else {
-          setError(`Unexpected response: ${res1.status}`);
+        await Promise.all([loadCatalog(), loadPurchases()]);
+      } catch (cause) {
+        if (!cancelled) {
+          setError(cause instanceof Error ? cause.message : "Failed to load marketplace");
         }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Purchase failed");
-      } finally {
-        setBuyingSku(null);
       }
-    },
-    [loadPurchases]
-  );
+    }
+    void init();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadCatalog, loadPurchases]);
+
+  useEffect(() => {
+    if (!selectedSku) return;
+    setParamsText(DEFAULT_PARAMS_BY_SKU[selectedSku] ?? "{}");
+  }, [selectedSku]);
+
+  async function handlePreview(): Promise<void> {
+    if (!selectedSku) return;
+    setBusy("preview");
+    setError(null);
+    try {
+      const params = parseParams(paramsText);
+      const result = await api.previewMarketplaceSku(selectedSku, params, runtime.token || undefined);
+      setPreviewPayload(result);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Preview failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handlePurchase(): Promise<void> {
+    if (!selectedSku) return;
+    setBusy("purchase");
+    setError(null);
+    try {
+      const params = parseParams(paramsText);
+      const result = await api.purchaseMarketplaceSku(selectedSku, params, runtime.token || undefined);
+      setPurchasePayload(result);
+      await loadPurchases();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Purchase failed");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     <RequireSession>
       <RouteShell
         title="Marketplace"
-        subtitle="derived data products powered by QuickNode Streams"
+        subtitle="Monad Streams-derived data products with x402 checkout"
         apiHealth={apiHealth}
         connectionStatus={runtime.connectionStatus}
       >
-        {error ? <p className="dash-empty-inline" style={{ color: "var(--spicy-paprika)" }}>{error}</p> : null}
+        {error ? <p className="dash-empty-inline">{error}</p> : null}
 
-        <section className="dash-route-stack">
-          {/* Product Catalog */}
+        <article className="dash-panel">
+          <header className="dash-panel-head">
+            <h3>Marketplace Throughput</h3>
+            <p className="pixel-text">purchase velocity and SKU concentration</p>
+          </header>
+          <div className="dash-metric-strip">
+            <div>
+              <p className="pixel-text">Catalog SKUs</p>
+              <strong>{catalog.length}</strong>
+            </div>
+            <div>
+              <p className="pixel-text">Purchases</p>
+              <strong>{purchases.length}</strong>
+            </div>
+            <div>
+              <p className="pixel-text">Top SKU</p>
+              <strong>{topPurchasedSku ? `${topPurchasedSku[0]} (${topPurchasedSku[1]})` : "none yet"}</strong>
+            </div>
+            <div>
+              <p className="pixel-text">Latest Purchase</p>
+              <strong>{purchases[0] ? truncateHash(purchases[0].id) : "none"}</strong>
+            </div>
+          </div>
+        </article>
+
+        <div className="dash-two-pane">
           <article className="dash-panel">
             <header className="dash-panel-head">
-              <h3>Product Catalog</h3>
-              <p className="pixel-text">x402-gated data products from Monad streams</p>
+              <h3>SKU Catalog</h3>
+              <p className="pixel-text">richer Monad product set from streams + transforms</p>
             </header>
 
-            <div className="dash-kpi-grid">
+            <div className="dash-table">
+              <div className="dash-table-head dash-table-head-6">
+                <span>sku</span>
+                <span>category</span>
+                <span>cadence</span>
+                <span>confidence</span>
+                <span>price</span>
+                <span>source</span>
+              </div>
               {catalog.map((item) => (
-                <div key={item.sku} className="dash-kpi-card">
-                  <p className="pixel-text">{item.dataSource}</p>
-                  <h3>{item.name}</h3>
-                  <p style={{ fontSize: "0.85rem", marginBottom: "0.5rem" }}>{item.description}</p>
-                  <p style={{ fontWeight: 700, fontSize: "1.1rem", color: "var(--spicy-paprika)" }}>
-                    {formatPrice(item.priceUsd)}
-                  </p>
-                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
-                    <button
-                      className="dash-btn"
-                      onClick={() => void handlePreview(item.sku)}
-                    >
-                      Preview
-                    </button>
-                    <button
-                      className="dash-btn"
-                      disabled={buyingSku !== null}
-                      onClick={() => void handleBuy(item.sku)}
-                    >
-                      {buyingSku === item.sku ? "Buying..." : "Buy"}
-                    </button>
-                  </div>
-                  {previewData[item.sku] && (
-                    <pre
-                      style={{
-                        marginTop: "0.5rem",
-                        fontSize: "0.7rem",
-                        maxHeight: "120px",
-                        overflow: "auto",
-                        background: "rgba(0,0,0,0.2)",
-                        padding: "0.5rem",
-                        borderRadius: "4px"
-                      }}
-                    >
-                      {JSON.stringify(previewData[item.sku], null, 2)}
-                    </pre>
-                  )}
-                </div>
+                <button
+                  key={item.sku}
+                  className={`dash-table-row dash-table-row-6 dash-row-button ${selectedSku === item.sku ? "active" : ""}`}
+                  onClick={() => setSelectedSku(item.sku)}
+                >
+                  <span>{item.sku}</span>
+                  <span>{item.category ?? "unknown"}</span>
+                  <span>{item.refreshCadence ?? "n/a"}</span>
+                  <span>{item.dataConfidence ?? "n/a"}</span>
+                  <span>${item.priceUsd.toFixed(2)}</span>
+                  <span>{item.dataSource}</span>
+                </button>
               ))}
-              {catalog.length === 0 && (
-                <p className="dash-empty-inline">Loading catalog...</p>
-              )}
             </div>
+
+            {selectedProduct ? (
+              <>
+                <div className="dash-inline-code">
+                  <p>{selectedProduct.name}</p>
+                  <p>{selectedProduct.description}</p>
+                </div>
+                <label className="dash-json-label">
+                  <span className="pixel-text">SKU Params (JSON)</span>
+                  <textarea value={paramsText} onChange={(event) => setParamsText(event.target.value)} />
+                </label>
+                <div className="dash-action-rail">
+                  <button className="dash-btn" disabled={busy !== null} onClick={() => void handlePreview()}>
+                    {busy === "preview" ? "Previewing..." : "Preview"}
+                  </button>
+                  <button className="dash-btn" disabled={busy !== null} onClick={() => void handlePurchase()}>
+                    {busy === "purchase" ? "Purchasing..." : "Purchase"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="dash-empty-inline">Select a SKU to configure params and purchase.</p>
+            )}
           </article>
 
-          {/* Last Purchase Result */}
-          {lastResult && (
-            <article className="dash-panel">
-              <header className="dash-panel-head">
-                <h3>Purchase Result</h3>
-                <p className="pixel-text">latest x402 purchase receipt</p>
-              </header>
-
-              <div className="dash-kpi-grid">
-                <div className="dash-kpi-card">
-                  <p className="pixel-text">Purchase ID</p>
-                  <h3 style={{ fontSize: "0.9rem", wordBreak: "break-all" }}>
-                    {truncateHash(lastResult.purchaseId)}
-                  </h3>
-                </div>
-                <div className="dash-kpi-card">
-                  <p className="pixel-text">SKU</p>
-                  <h3>{lastResult.sku}</h3>
-                </div>
-                <div className="dash-kpi-card">
-                  <p className="pixel-text">Payment ID</p>
-                  <h3 style={{ fontSize: "0.9rem" }}>{truncateHash(lastResult.paymentId)}</h3>
-                </div>
-                <div className="dash-kpi-card">
-                  <p className="pixel-text">Settlement Tx</p>
-                  <h3 style={{ fontSize: "0.9rem" }}>{truncateHash(lastResult.settlementTxHash)}</h3>
-                </div>
-              </div>
-
-              <div style={{ padding: "1rem" }}>
-                <p className="pixel-text" style={{ marginBottom: "0.25rem" }}>
-                  Result Hash: {lastResult.resultHash}
-                </p>
-                <p className="pixel-text" style={{ marginBottom: "0.5rem" }}>
-                  Records: {lastResult.data.length}
-                </p>
-                <pre
-                  style={{
-                    fontSize: "0.7rem",
-                    maxHeight: "200px",
-                    overflow: "auto",
-                    background: "rgba(0,0,0,0.2)",
-                    padding: "0.75rem",
-                    borderRadius: "4px"
-                  }}
-                >
-                  {JSON.stringify(lastResult.data.slice(0, 5), null, 2)}
-                </pre>
-              </div>
-            </article>
-          )}
-
-          {/* Purchase History */}
           <article className="dash-panel">
             <header className="dash-panel-head">
-              <h3>Purchase History</h3>
-              <p className="pixel-text">past marketplace purchases</p>
+              <h3>Responses</h3>
+              <p className="pixel-text">preview payload and latest purchase receipt</p>
             </header>
 
-            <div className="dash-feed-list">
-              {purchases.map((p) => (
-                <div key={p.id} className="dash-feed-row">
-                  <p className="pixel-text">{p.createdAt}</p>
-                  <p className="dash-feed-title">{p.sku}</p>
-                  <p>Status: {p.status}</p>
-                  <p className="pixel-text">
-                    Payment: {truncateHash(p.paymentId)} | Hash: {truncateHash(p.resultHash)}
-                  </p>
-                </div>
-              ))}
-              {purchases.length === 0 && (
-                <p className="dash-empty-inline">No purchases yet. Buy a data product above.</p>
-              )}
-            </div>
+            {previewPayload ? (
+              <pre className="dash-json-preview">{JSON.stringify(previewPayload, null, 2)}</pre>
+            ) : (
+              <p className="dash-empty-inline">Run preview to inspect sample payloads.</p>
+            )}
+
+            {purchasePayload ? (
+              <pre className="dash-json-preview">{JSON.stringify(purchasePayload, null, 2)}</pre>
+            ) : (
+              <p className="dash-empty-inline">Purchase response will appear here.</p>
+            )}
           </article>
-        </section>
+        </div>
+
+        <article className="dash-panel">
+          <header className="dash-panel-head">
+            <h3>Purchase Ledger</h3>
+            <p className="pixel-text">recent x402 completions</p>
+          </header>
+          <div className="dash-table">
+            <div className="dash-table-head dash-table-head-5">
+              <span>time</span>
+              <span>sku</span>
+              <span>status</span>
+              <span>payment</span>
+              <span>result hash</span>
+            </div>
+            {purchases.map((purchase) => (
+              <div className="dash-table-row dash-table-row-5" key={purchase.id}>
+                <span>{purchase.createdAt}</span>
+                <span>{purchase.sku}</span>
+                <span>{purchase.status}</span>
+                <span>{truncateHash(purchase.paymentId)}</span>
+                <span>{truncateHash(purchase.resultHash)}</span>
+              </div>
+            ))}
+            {purchases.length === 0 ? <p className="dash-empty-inline">No purchases yet.</p> : null}
+          </div>
+        </article>
       </RouteShell>
     </RequireSession>
   );

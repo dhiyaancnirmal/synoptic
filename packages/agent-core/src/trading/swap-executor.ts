@@ -11,7 +11,7 @@ function toBigIntOrUndefined(value?: string): bigint | undefined {
   return BigInt(value);
 }
 
-export async function signAndBroadcastSwap(input: {
+export async function signAndBroadcastTransaction(input: {
   wallet: Wallet;
   provider: JsonRpcProvider;
   unsignedTx: {
@@ -42,4 +42,20 @@ export async function signAndBroadcastSwap(input: {
   const tx = await signer.sendTransaction(txRequest);
   await tx.wait(1);
   return { txHash: tx.hash };
+}
+
+export async function signAndBroadcastSwap(input: {
+  wallet: Wallet;
+  provider: JsonRpcProvider;
+  unsignedTx: {
+    to: string;
+    data: string;
+    value?: string;
+    chainId?: number;
+    gasLimit?: string;
+    maxFeePerGas?: string;
+    maxPriorityFeePerGas?: string;
+  };
+}): Promise<SwapExecutionResult> {
+  return signAndBroadcastTransaction(input);
 }

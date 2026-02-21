@@ -1,8 +1,20 @@
 import { randomUUID } from "node:crypto";
 import type { Repositories, SynopticDb } from "@synoptic/db";
-import { eq, desc, streamBlocks, derivedTransfers, derivedContractActivity, marketplacePurchases } from "@synoptic/db";
-import type { ActivityEvent, Agent } from "@synoptic/types";
-import type { CompatEvent, CompatOrder, RuntimeStoreContract } from "./runtime-store.js";
+import {
+  eq,
+  desc,
+  streamBlocks,
+  derivedTransfers,
+  derivedContractActivity,
+  marketplacePurchases
+} from "@synoptic/db";
+import type { ActivityEvent, Agent, LiquidityAction, LiquidityActionStatus, Trade } from "@synoptic/types";
+import type {
+  CompatEvent,
+  CompatOrder,
+  LiquidityActionRecord,
+  RuntimeStoreContract
+} from "./runtime-store.js";
 import { mapEventName, toCompatStatus } from "./runtime-store.js";
 
 export class DbRuntimeStore implements RuntimeStoreContract {
@@ -72,7 +84,10 @@ export class DbRuntimeStore implements RuntimeStoreContract {
     amountIn: string;
     amountOut: string;
     routingType: string;
-    status: "quoting" | "approving" | "signing" | "broadcast" | "confirmed" | "reverted" | "failed";
+    intent?: Trade["intent"];
+    quoteRequestId?: string;
+    swapRequestId?: string;
+    status: Trade["status"];
     strategyReason?: string;
     quoteRequest?: Record<string, unknown>;
     quoteResponse?: Record<string, unknown>;
@@ -83,12 +98,14 @@ export class DbRuntimeStore implements RuntimeStoreContract {
 
   async updateTradeStatus(
     id: string,
-    status: "quoting" | "approving" | "signing" | "broadcast" | "confirmed" | "reverted" | "failed",
+    status: Trade["status"],
     details?: {
       executionTxHash?: string;
       kiteAttestationTx?: string;
       errorMessage?: string;
       gasUsed?: string;
+      quoteRequestId?: string;
+      swapRequestId?: string;
     }
   ) {
     return this.repos.tradeRepo.updateStatus(id, status, details);
@@ -258,6 +275,7 @@ export class DbRuntimeStore implements RuntimeStoreContract {
       transactionCount: r.transactionCount,
       gasUsed: r.gasUsed ?? undefined,
       timestamp: r.timestamp ?? undefined,
+      rawPayload: (r.rawPayload as Record<string, unknown>) ?? undefined,
       receivedAt: r.receivedAt.toISOString()
     }));
   }
@@ -375,6 +393,42 @@ export class DbRuntimeStore implements RuntimeStoreContract {
     }));
   }
 
+  async createLiquidityAction(input: {
+    agentId: string;
+    actionType: LiquidityAction["actionType"];
+    chainId: number;
+    token0: string;
+    token1: string;
+    feeTier: number;
+    preset: LiquidityAction["preset"];
+    lowerBoundPct: number;
+    upperBoundPct: number;
+    amount0: string;
+    amount1: string;
+    positionId?: string;
+    txHash?: string;
+    status: LiquidityAction["status"];
+    errorMessage?: string;
+  }): Promise<LiquidityActionRecord> {
+    return this.repos.liquidityRepo.create(input);
+  }
+
+  async updateLiquidityAction(
+    id: string,
+    input: {
+      status?: LiquidityActionStatus;
+      txHash?: string;
+      positionId?: string;
+      errorMessage?: string;
+    }
+  ): Promise<LiquidityActionRecord | undefined> {
+    return this.repos.liquidityRepo.update(id, input);
+  }
+
+  async listLiquidityActions(limit = 200): Promise<LiquidityActionRecord[]> {
+    return this.repos.liquidityRepo.list(limit);
+  }
+
   async compatAgents() {
     const agents = await this.listAgents();
     return agents.map((agent) => ({
@@ -441,6 +495,7 @@ export class DbRuntimeStore implements RuntimeStoreContract {
       amountIn: input.size,
       amountOut: input.size,
       routingType: "BEST_PRICE",
+      intent: "swap",
       status: "confirmed",
       strategyReason: "compat.execute"
     });

@@ -14,6 +14,9 @@ function toTrade(row: typeof trades.$inferSelect): Trade {
     amountIn: row.amountIn,
     amountOut: row.amountOut,
     routingType: row.routingType,
+    intent: (row.intent as Trade["intent"]) ?? undefined,
+    quoteRequestId: row.quoteRequestId ?? undefined,
+    swapRequestId: row.swapRequestId ?? undefined,
     status: row.status as Trade["status"],
     executionTxHash,
     kiteAttestationTx: row.kiteAttestationTx ?? undefined,
@@ -44,6 +47,9 @@ export class TradeRepo {
     amountIn: string;
     amountOut: string;
     routingType: string;
+    intent?: Trade["intent"];
+    quoteRequestId?: string;
+    swapRequestId?: string;
     status: Trade["status"];
     strategyReason?: string;
     quoteRequest?: Record<string, unknown>;
@@ -60,6 +66,9 @@ export class TradeRepo {
         amountIn: input.amountIn,
         amountOut: input.amountOut,
         routingType: input.routingType,
+        intent: input.intent,
+        quoteRequestId: input.quoteRequestId,
+        swapRequestId: input.swapRequestId,
         status: input.status,
         strategyReason: input.strategyReason,
         quoteRequest: input.quoteRequest,
@@ -78,6 +87,8 @@ export class TradeRepo {
       kiteAttestationTx?: string;
       errorMessage?: string;
       gasUsed?: string;
+      quoteRequestId?: string;
+      swapRequestId?: string;
     }
   ): Promise<Trade | undefined> {
     const [row] = await this.db
@@ -88,6 +99,8 @@ export class TradeRepo {
         kiteAttestationTx: details?.kiteAttestationTx,
         errorMessage: details?.errorMessage,
         gasUsed: details?.gasUsed,
+        quoteRequestId: details?.quoteRequestId,
+        swapRequestId: details?.swapRequestId,
         confirmedAt: status === "confirmed" ? new Date() : undefined
       })
       .where(eq(trades.id, id))

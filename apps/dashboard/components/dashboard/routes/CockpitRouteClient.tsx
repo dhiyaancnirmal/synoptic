@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { pingApi } from "@/lib/api/client";
+import {
+  createApiClient,
+  getTradeSupportedChains,
+  pingApi,
+  type SupportedChainsResponse
+} from "@/lib/api/client";
 import { buildExplorerTxUrl } from "@/lib/api/explorer";
 import { RouteShell } from "@/components/dashboard/RouteShell";
 import { RequireSession } from "@/components/dashboard/RequireSession";
@@ -11,11 +16,17 @@ import type { ActivityVM } from "@/lib/mappers";
 
 function useQuickNodeStreamStatus(activity: ActivityVM[]) {
   return useMemo(() => {
-    const quickNodeEvents = activity.filter(
-      (event) => event.eventType === "quicknode.block.received"
-    );
+    const quickNodeEvents = activity.filter((event) => event.eventType === "quicknode.block.received");
     const lastEvent = quickNodeEvents[0] || null;
-    if (!lastEvent) return { status: "offline" as const, timeSinceLastMs: Infinity };
+    if (!lastEvent) {
+      return {
+        status: "offline" as const,
+        timeSinceLastMs: Infinity,
+        blocksProcessed: 0,
+        transfersExtracted: 0,
+        deploymentsDetected: 0
+      };
+    }
     const timeSinceLastMs = Date.now() - Date.parse(lastEvent.createdAt);
     const status =
       timeSinceLastMs < 30_000
@@ -23,207 +34,264 @@ function useQuickNodeStreamStatus(activity: ActivityVM[]) {
         : timeSinceLastMs < 120_000
           ? ("degraded" as const)
           : ("offline" as const);
-    return { status, timeSinceLastMs };
+    const parseMetric = (key: string): number => {
+      const match = lastEvent.detail.match(new RegExp(`${key}:([0-9]+)`));
+      if (!match) return 0;
+      const parsed = Number(match[1]);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    return {
+      status,
+      timeSinceLastMs,
+      blocksProcessed: parseMetric("blocksProcessed"),
+      transfersExtracted: parseMetric("transfersExtracted"),
+      deploymentsDetected: parseMetric("deploymentsDetected")
+    };
   }, [activity]);
 }
 
 export function CockpitRouteClient() {
   const runtime = useDashboardRuntime();
+  const api = useMemo(() => createApiClient(), []);
   const [apiHealth, setApiHealth] = useState("checking");
+  const [supportedChains, setSupportedChains] = useState<SupportedChainsResponse>();
+  const [purchaseCount, setPurchaseCount] = useState(0);
+  const [topSku, setTopSku] = useState<string>("none");
 
   useEffect(() => {
-    void pingApi()
-      .then(setApiHealth)
-      .catch(() => setApiHealth("unreachable"));
+    void pingApi().then(setApiHealth).catch(() => setApiHealth("unreachable"));
   }, []);
 
-  const activeAgents = runtime.agents.filter((a) => a.status === "running").length;
-  const idleAgents = runtime.agents.length - activeAgents;
-
-  const settledPayments = runtime.payments.filter((p) => p.status === "settled");
-  const totalSettledUsd = settledPayments.reduce(
-    (sum, p) => sum + parseFloat(p.amountUsd || "0"),
-    0
-  );
-
-  const confirmedTrades = runtime.trades.filter((t) => t.status === "confirmed");
-  const confirmationRate =
-    runtime.trades.length > 0
-      ? Math.round((confirmedTrades.length / runtime.trades.length) * 100)
-      : 0;
+  useEffect(() => {
+    let cancelled = false;
+    async function loadOverview(): Promise<void> {
+      try {
+        const [chains, purchases] = await Promise.all([
+          getTradeSupportedChains(runtime.token || undefined),
+          api.listMarketplacePurchases(runtime.token || undefined)
+        ]);
+        if (cancelled) return;
+        setSupportedChains(chains);
+        setPurchaseCount(purchases.length);
+        const counts = new Map<string, number>();
+        for (const purchase of purchases) {
+          counts.set(purchase.sku, (counts.get(purchase.sku) ?? 0) + 1);
+        }
+        const top = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0];
+        setTopSku(top ? `${top[0]} (${top[1]})` : "none");
+      } catch {
+        // ignore partial load failures in cockpit
+      }
+    }
+    void loadOverview();
+    return () => {
+      cancelled = true;
+    };
+  }, [api, runtime.token]);
 
   const streamHealth = useQuickNodeStreamStatus(runtime.activity);
 
-  const totalBudget = runtime.agents.reduce(
-    (sum, a) => sum + parseFloat(a.dailyBudgetUsd || "0"),
-    0
-  );
-  const totalSpent = runtime.agents.reduce(
-    (sum, a) => sum + parseFloat(a.spentTodayUsd || "0"),
-    0
-  );
-  const budgetUtilization = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0;
+  const failureQueue = useMemo(() => {
+    const failedTrades = runtime.trades
+      .filter((trade) => trade.status === "failed" || trade.status === "reverted")
+      .map((trade) => ({
+        id: trade.id,
+        kind: "trade",
+        createdAt: trade.createdAt,
+        detail: `${trade.pair} (${trade.status})`,
+        link: "/trading"
+      }));
 
-  const latestActivity = runtime.activity[0];
-  const latestTimestamp = latestActivity?.createdAt ?? "N/A";
+    const failedPayments = runtime.payments
+      .filter((payment) => payment.status === "failed")
+      .map((payment) => ({
+        id: payment.id,
+        kind: "payment",
+        createdAt: payment.createdAt,
+        detail: `${payment.serviceUrl} (${payment.status})`,
+        link: "/payments"
+      }));
 
-  const recentTrades = runtime.trades.slice(0, 5);
-  const recentPayments = runtime.payments.slice(0, 5);
+    const failedActivity = runtime.activity
+      .filter(
+        (event) =>
+          event.eventType.includes("failed") ||
+          event.eventType.includes("revert") ||
+          event.eventType.includes("error")
+      )
+      .map((event) => ({
+        id: event.id,
+        kind: "event",
+        createdAt: event.createdAt,
+        detail: `${event.eventType}: ${event.detail}`,
+        link: "/activity"
+      }));
+
+    return [...failedTrades, ...failedPayments, ...failedActivity]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 10);
+  }, [runtime.activity, runtime.payments, runtime.trades]);
 
   return (
     <RequireSession>
       <RouteShell
         title="Overview"
-        subtitle="system health at a glance"
+        subtitle="action-driven operator cockpit"
         apiHealth={apiHealth}
         connectionStatus={runtime.connectionStatus}
       >
         {runtime.error ? <p className="dash-empty-inline">{runtime.error}</p> : null}
 
-        <section className="dash-route-stack">
-          <div className="dash-kpi-row-6">
-            <div className="dash-kpi-card">
-              <p className="pixel-text">Agents</p>
-              <h3>{runtime.agents.length}</h3>
-              <p>
-                {activeAgents} active, {idleAgents} idle
-              </p>
+        <article className="dash-panel">
+          <header className="dash-panel-head">
+            <h3>Operator Strip</h3>
+            <p className="pixel-text">trade+lp capability, marketplace throughput, streams lag</p>
+          </header>
+          <div className="dash-metric-strip">
+            <div>
+              <p className="pixel-text">Swap support</p>
+              <strong>{supportedChains?.monadSupportedForSwap ? "Monad enabled" : "check /trade/supported-chains"}</strong>
             </div>
-            <div className="dash-kpi-card">
-              <p className="pixel-text">Settled Payments</p>
-              <h3>${totalSettledUsd.toFixed(2)}</h3>
-              <p>{settledPayments.length} settled</p>
+            <div>
+              <p className="pixel-text">LP support</p>
+              <strong>{supportedChains?.monadSupportedForLp ? "Monad enabled" : "Monad fallback required"}</strong>
             </div>
-            <div className="dash-kpi-card">
-              <p className="pixel-text">Trades</p>
-              <h3>{runtime.trades.length}</h3>
-              <p>{confirmationRate}% confirmed</p>
+            <div>
+              <p className="pixel-text">Marketplace purchases</p>
+              <strong>{purchaseCount}</strong>
             </div>
-            <div className="dash-kpi-card">
-              <p className="pixel-text">Stream Health</p>
-              <h3 className={`dash-stream-${streamHealth.status}`}>{streamHealth.status}</h3>
-              <p>QuickNode</p>
+            <div>
+              <p className="pixel-text">Top SKU</p>
+              <strong>{topSku}</strong>
             </div>
-            <div className="dash-kpi-card">
-              <p className="pixel-text">Budget Used</p>
-              <h3>{budgetUtilization}%</h3>
-              <p>
-                ${totalSpent.toFixed(2)} / ${totalBudget.toFixed(2)}
-              </p>
+            <div>
+              <p className="pixel-text">Streams health</p>
+              <strong className={`dash-stream-${streamHealth.status}`}>{streamHealth.status}</strong>
             </div>
-            <div className="dash-kpi-card">
-              <p className="pixel-text">Latest Activity</p>
-              <h3 style={{ fontSize: "0.92rem" }}>{latestTimestamp}</h3>
-              <p>{latestActivity?.eventType ?? "none"}</p>
+            <div>
+              <p className="pixel-text">Failure queue</p>
+              <strong>{failureQueue.length}</strong>
             </div>
           </div>
+        </article>
 
-          <div className="dash-overview-grid">
-            <article className="dash-panel">
-              <header className="dash-panel-head">
-                <h3>Recent Trades</h3>
-                <Link href="/trading" className="pixel-text">
-                  view all
-                </Link>
-              </header>
+        <div className="dash-two-pane">
+          <article className="dash-panel">
+            <header className="dash-panel-head">
+              <h3>Streams Health</h3>
+              <p className="pixel-text">lag + extraction rates from latest webhook event</p>
+            </header>
+            <div className="dash-table">
+              <div className="dash-table-head dash-table-head-4">
+                <span>metric</span>
+                <span>value</span>
+                <span>metric</span>
+                <span>value</span>
+              </div>
+              <div className="dash-table-row dash-table-row-4">
+                <span>blocksProcessed</span>
+                <span>{streamHealth.blocksProcessed}</span>
+                <span>transfersExtracted</span>
+                <span>{streamHealth.transfersExtracted}</span>
+              </div>
+              <div className="dash-table-row dash-table-row-4">
+                <span>deploymentsDetected</span>
+                <span>{streamHealth.deploymentsDetected}</span>
+                <span>timeSinceLastMs</span>
+                <span>{Number.isFinite(streamHealth.timeSinceLastMs) ? streamHealth.timeSinceLastMs : "n/a"}</span>
+              </div>
+            </div>
 
-              {recentTrades.length > 0 ? (
-                <div className="dash-feed-list">
-                  {recentTrades.map((trade) => (
-                    <div key={trade.id} className="dash-feed-row">
-                      <p className="pixel-text">{trade.createdAt}</p>
-                      <p className="dash-feed-title">{trade.pair}</p>
-                      <p>
-                        {trade.amountIn} / {trade.amountOut} —{" "}
-                        <span
-                          className={`dash-status ${
-                            trade.status === "failed" || trade.status === "reverted"
-                              ? "error"
-                              : trade.status === "confirmed"
-                                ? "success"
-                                : "challenge"
-                          }`}
-                        >
-                          {trade.status}
-                        </span>
-                        {trade.executionTxHash
-                          ? (() => {
-                              const url = buildExplorerTxUrl({
-                                chain: trade.executionChain,
-                                txHash: trade.executionTxHash,
-                              });
-                              return url ? (
-                                <>
-                                  {" "}
-                                  <a href={url} target="_blank" rel="noreferrer">
-                                    tx
-                                  </a>
-                                </>
-                              ) : null;
-                            })()
-                          : null}
-                      </p>
-                    </div>
-                  ))}
+            <div className="dash-table">
+              <div className="dash-table-head dash-table-head-6">
+                <span>time</span>
+                <span>pair</span>
+                <span>routing</span>
+                <span>intent</span>
+                <span>status</span>
+                <span>tx</span>
+              </div>
+              {runtime.trades.slice(0, 6).map((trade) => (
+                <div className="dash-table-row dash-table-row-6" key={trade.id}>
+                  <span>{trade.createdAt}</span>
+                  <span>{trade.pair}</span>
+                  <span>{trade.routingType}</span>
+                  <span>{trade.intent ?? "swap"}</span>
+                  <span>{trade.status}</span>
+                  <span>
+                    {trade.executionTxHash
+                      ? (() => {
+                          const url = buildExplorerTxUrl({
+                            chain: trade.executionChain,
+                            txHash: trade.executionTxHash
+                          });
+                          return url ? (
+                            <a href={url} target="_blank" rel="noreferrer">
+                              open
+                            </a>
+                          ) : (
+                            "unconfigured"
+                          );
+                        })()
+                      : "N/A"}
+                  </span>
                 </div>
-              ) : (
-                <p className="dash-empty-inline">No trades yet.</p>
-              )}
-            </article>
+              ))}
+            </div>
+          </article>
 
-            <article className="dash-panel">
-              <header className="dash-panel-head">
-                <h3>Recent Payments</h3>
-                <Link href="/payments" className="pixel-text">
-                  view all
-                </Link>
-              </header>
+          <article className="dash-panel">
+            <header className="dash-panel-head">
+              <h3>Operator Action Queue</h3>
+              <p className="pixel-text">items requiring intervention</p>
+            </header>
+            {failureQueue.length > 0 ? (
+              <div className="dash-feed-list">
+                {failureQueue.map((item) => (
+                  <div key={`${item.kind}-${item.id}`} className="dash-feed-row error">
+                    <p className="pixel-text">{item.createdAt}</p>
+                    <p className="dash-feed-title">{item.kind}</p>
+                    <p>{item.detail}</p>
+                    <Link href={item.link} className="pixel-text">
+                      open
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="dash-empty-inline">No recent failures requiring action.</p>
+            )}
 
-              {recentPayments.length > 0 ? (
-                <div className="dash-feed-list">
-                  {recentPayments.map((payment) => (
-                    <div key={payment.id} className="dash-feed-row">
-                      <p className="pixel-text">{payment.createdAt}</p>
-                      <p className="dash-feed-title">${payment.amountUsd}</p>
-                      <p>
-                        {payment.serviceUrl} —{" "}
-                        <span
-                          className={`dash-status ${
-                            payment.status === "failed"
-                              ? "error"
-                              : payment.status === "settled"
-                                ? "success"
-                                : "challenge"
-                          }`}
-                        >
-                          {payment.status}
-                        </span>
-                        {payment.txHash
-                          ? (() => {
-                              const url = buildExplorerTxUrl({
-                                chain: "kite-testnet",
-                                txHash: payment.txHash,
-                              });
-                              return url ? (
-                                <>
-                                  {" "}
-                                  <a href={url} target="_blank" rel="noreferrer">
-                                    tx
-                                  </a>
-                                </>
-                              ) : null;
-                            })()
-                          : null}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="dash-empty-inline">No payments yet.</p>
-              )}
-            </article>
-          </div>
-        </section>
+            <div className="dash-table">
+              <div className="dash-table-head dash-table-head-3">
+                <span>route</span>
+                <span>purpose</span>
+                <span>action</span>
+              </div>
+              <div className="dash-table-row dash-table-row-3">
+                <span>/trading</span>
+                <span>Swap/order and LP execution controls</span>
+                <span>
+                  <Link href="/trading">open</Link>
+                </span>
+              </div>
+              <div className="dash-table-row dash-table-row-3">
+                <span>/marketplace</span>
+                <span>Derived data product purchase + previews</span>
+                <span>
+                  <Link href="/marketplace">open</Link>
+                </span>
+              </div>
+              <div className="dash-table-row dash-table-row-3">
+                <span>/streams</span>
+                <span>Ingestion telemetry and extraction state</span>
+                <span>
+                  <Link href="/streams">open</Link>
+                </span>
+              </div>
+            </div>
+          </article>
+        </div>
       </RouteShell>
     </RequireSession>
   );

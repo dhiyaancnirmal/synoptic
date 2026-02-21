@@ -29,6 +29,39 @@ function setBrowserWindow(storage: MemorySessionStorage): void {
   };
 }
 
+test("ensureDashboardSessionToken returns empty token when insecure local bypass is enabled", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousWindow = (globalThis as { window?: unknown }).window;
+  const previousFlag = process.env.NEXT_PUBLIC_ALLOW_INSECURE_DEV_AUTH_BYPASS;
+
+  const sessionStorage = new MemorySessionStorage();
+  setBrowserWindow(sessionStorage);
+  process.env.NEXT_PUBLIC_ALLOW_INSECURE_DEV_AUTH_BYPASS = "true";
+
+  globalThis.fetch = (async () => {
+    throw new Error("network should not be called in bypass mode");
+  }) as typeof fetch;
+
+  try {
+    const module = (await import(`./client.js?bypass-mode-${Date.now()}`)) as typeof import("./client.js");
+    const token = await module.ensureDashboardSessionToken();
+    assert.equal(token, "");
+    assert.equal(module.getSessionToken(), "");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousWindow === undefined) {
+      delete (globalThis as { window?: unknown }).window;
+    } else {
+      (globalThis as { window?: unknown }).window = previousWindow;
+    }
+    if (previousFlag === undefined) {
+      delete process.env.NEXT_PUBLIC_ALLOW_INSECURE_DEV_AUTH_BYPASS;
+    } else {
+      process.env.NEXT_PUBLIC_ALLOW_INSECURE_DEV_AUTH_BYPASS = previousFlag;
+    }
+  }
+});
+
 test("request clears browser session token and throws on 401 in dev mode", async () => {
   const previousFetch = globalThis.fetch;
   const previousWindow = (globalThis as { window?: unknown }).window;

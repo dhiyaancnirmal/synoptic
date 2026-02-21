@@ -47,6 +47,10 @@ export interface MarketplaceCatalogItem {
   description: string;
   priceUsd: number;
   dataSource: string;
+  category?: string;
+  refreshCadence?: string;
+  sampleSchema?: Record<string, string>;
+  dataConfidence?: string;
 }
 
 export interface MarketplacePurchase {
@@ -56,6 +60,102 @@ export interface MarketplacePurchase {
   status: string;
   resultHash?: string;
   createdAt: string;
+}
+
+export type TradeIntent = "swap" | "order";
+export type TradeRoutingType =
+  | "CLASSIC"
+  | "DUTCH_LIMIT"
+  | "DUTCH_V2"
+  | "LIMIT_ORDER"
+  | "WRAP"
+  | "UNWRAP"
+  | "BRIDGE"
+  | "PRIORITY"
+  | "DUTCH_V3"
+  | "QUICKROUTE"
+  | "CHAINED";
+
+export interface SupportedChain {
+  chainId: number;
+  name?: string;
+  supportsSwaps: boolean;
+  supportsLp: boolean;
+}
+
+export interface SupportedChainsResponse {
+  chains: SupportedChain[];
+  monadSupportedForSwap: boolean;
+  monadSupportedForLp: boolean;
+}
+
+export interface TradeQuoteRequest {
+  tokenIn: string;
+  tokenOut: string;
+  amountIn: string;
+  chainId: number;
+  walletAddress?: string;
+  intent?: TradeIntent;
+  routingType?: TradeRoutingType;
+  slippageTolerance?: number;
+  urgency?: "normal" | "fast";
+  autoSlippage?: boolean;
+}
+
+export interface TradeQuoteResponse {
+  requestId: string;
+  quoteId?: string;
+  routing: string;
+  intent: TradeIntent;
+  routingType: TradeRoutingType;
+  amountOut: string;
+  quote: Record<string, unknown>;
+}
+
+export interface TradeExecuteRequest {
+  quoteResponse: Record<string, unknown>;
+  tokenIn?: string;
+  tokenOut?: string;
+  amountIn?: string;
+  signature?: string;
+  intent?: TradeIntent;
+  routingType?: TradeRoutingType;
+  agentId?: string;
+}
+
+export interface LiquidityActionVm {
+  id: string;
+  agentId: string;
+  actionType: "create" | "increase" | "decrease" | "collect";
+  chainId: number;
+  token0: string;
+  token1: string;
+  feeTier: number;
+  preset: "uniform" | "bell" | "bid_ask_inverse";
+  lowerBoundPct: number;
+  upperBoundPct: number;
+  amount0: string;
+  amount1: string;
+  positionId?: string;
+  txHash?: string;
+  status: "submitted" | "confirmed" | "failed";
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LiquidityActionRequest {
+  agentId?: string;
+  chainId?: number;
+  token0: string;
+  token1: string;
+  feeTier?: number;
+  preset?: "uniform" | "bell" | "bid_ask_inverse";
+  lowerBoundPct?: number;
+  upperBoundPct?: number;
+  amount0: string;
+  amount1: string;
+  positionId?: string;
 }
 
 export interface ApiClient {
@@ -74,6 +174,30 @@ export interface ApiClient {
   getOraclePrice: (pair: string, xPayment?: string, token?: string) => Promise<OraclePriceResult>;
   getMarketplaceCatalog: () => Promise<MarketplaceCatalogItem[]>;
   listMarketplacePurchases: (token?: string) => Promise<MarketplacePurchase[]>;
+  getTradeSupportedChains: (token?: string) => Promise<SupportedChainsResponse>;
+  quoteTrade: (input: TradeQuoteRequest, token?: string) => Promise<TradeQuoteResponse>;
+  executeTrade: (input: TradeExecuteRequest, token?: string) => Promise<Record<string, unknown>>;
+  quoteLiquidity: (input: Record<string, unknown>, token?: string) => Promise<Record<string, unknown>>;
+  runLiquidityAction: (
+    action: "create" | "increase" | "decrease" | "collect",
+    input: LiquidityActionRequest,
+    token?: string
+  ) => Promise<Record<string, unknown>>;
+  listLiquidityActions: (limit?: number, token?: string) => Promise<LiquidityActionVm[]>;
+  getLiquidityHistory: (
+    input?: { walletAddress?: string; chainId?: number },
+    token?: string
+  ) => Promise<Record<string, unknown>>;
+  previewMarketplaceSku: (
+    sku: string,
+    params?: Record<string, unknown>,
+    token?: string
+  ) => Promise<Record<string, unknown>>;
+  purchaseMarketplaceSku: (
+    sku: string,
+    params?: Record<string, unknown>,
+    token?: string
+  ) => Promise<Record<string, unknown>>;
 }
 
 const API_URL =
@@ -89,6 +213,8 @@ const DEFAULT_API_MODE: ApiMode =
   process.env.NEXT_PUBLIC_API_MODE === "compat" ? "compat" : "canonical";
 
 const ALLOW_COMPAT_MODE = process.env.NEXT_PUBLIC_ALLOW_COMPAT_MODE === "true";
+const ALLOW_INSECURE_DEV_AUTH_BYPASS =
+  process.env.NEXT_PUBLIC_ALLOW_INSECURE_DEV_AUTH_BYPASS === "true";
 
 export function createApiClient(mode: ApiMode = DEFAULT_API_MODE): ApiClient {
   const resolvedMode = mode === "compat" && !ALLOW_COMPAT_MODE ? "canonical" : mode;
@@ -108,7 +234,16 @@ export function createApiClient(mode: ApiMode = DEFAULT_API_MODE): ApiClient {
     listActivity: async (token) => listActivity(resolvedMode, token),
     getOraclePrice: async (pair, xPayment, token) => getOraclePrice(pair, xPayment, token),
     getMarketplaceCatalog: async () => getMarketplaceCatalog(),
-    listMarketplacePurchases: async (token) => listMarketplacePurchases(token)
+    listMarketplacePurchases: async (token) => listMarketplacePurchases(token),
+    getTradeSupportedChains: async (token) => getTradeSupportedChains(token),
+    quoteTrade: async (input, token) => quoteTrade(input, token),
+    executeTrade: async (input, token) => executeTrade(input, token),
+    quoteLiquidity: async (input, token) => quoteLiquidity(input, token),
+    runLiquidityAction: async (action, input, token) => runLiquidityAction(action, input, token),
+    listLiquidityActions: async (limit, token) => listLiquidityActions(limit, token),
+    getLiquidityHistory: async (input, token) => getLiquidityHistory(input, token),
+    previewMarketplaceSku: async (sku, params, token) => previewMarketplaceSku(sku, params, token),
+    purchaseMarketplaceSku: async (sku, params, token) => purchaseMarketplaceSku(sku, params, token)
   };
 }
 
@@ -130,6 +265,8 @@ export async function pingApi(): Promise<string> {
 }
 
 export async function ensureDashboardSessionToken(): Promise<string> {
+  if (ALLOW_INSECURE_DEV_AUTH_BYPASS) return "";
+
   const envToken = resolveToken();
   if (envToken) return envToken;
 
@@ -550,6 +687,171 @@ async function listMarketplacePurchases(token?: string): Promise<MarketplacePurc
     token
   );
   return payload.purchases ?? [];
+}
+
+function buildDemoPaymentHeader(challenge: Record<string, unknown>): { payment: string; paymentRequestId: string } {
+  const network = typeof challenge.network === "string" ? challenge.network : "eip155:2368";
+  const payTo = typeof challenge.payTo === "string" ? challenge.payTo : "0xdemo_payee";
+  const maxAmountRequired =
+    typeof challenge.maxAmountRequired === "string" ? challenge.maxAmountRequired : "0";
+  const paymentRequestId =
+    typeof challenge.paymentRequestId === "string" ? challenge.paymentRequestId : "";
+  const scheme = typeof challenge.scheme === "string" ? challenge.scheme : "exact";
+
+  return {
+    payment: JSON.stringify({
+      paymentPayload: {
+        scheme,
+        network,
+        authorization: {
+          payer: "0xdemo_dashboard_user",
+          payee: payTo,
+          amount: maxAmountRequired
+        },
+        signature: "0xdemo_sig"
+      },
+      paymentRequirements: challenge
+    }),
+    paymentRequestId
+  };
+}
+
+async function requestWithOptionalX402<T>(
+  path: string,
+  init: RequestInit,
+  token?: string
+): Promise<T> {
+  try {
+    return await request<T>(path, init, token);
+  } catch (cause) {
+    if (!(cause instanceof ApiClientError) || cause.status !== 402 || !cause.payload) {
+      throw cause;
+    }
+    const demoPayment = buildDemoPaymentHeader(cause.payload as unknown as Record<string, unknown>);
+    const retryHeaders = new Headers(init.headers);
+    retryHeaders.set("x-payment", demoPayment.payment);
+    retryHeaders.set("x-payment-request-id", demoPayment.paymentRequestId);
+    return request<T>(
+      path,
+      {
+        ...init,
+        headers: retryHeaders
+      },
+      token
+    );
+  }
+}
+
+export async function getTradeSupportedChains(token?: string): Promise<SupportedChainsResponse> {
+  return request<SupportedChainsResponse>("/trade/supported-chains", {}, token);
+}
+
+export async function quoteTrade(input: TradeQuoteRequest, token?: string): Promise<TradeQuoteResponse> {
+  return requestWithOptionalX402<TradeQuoteResponse>(
+    "/trade/quote",
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    },
+    token
+  );
+}
+
+export async function executeTrade(
+  input: TradeExecuteRequest,
+  token?: string
+): Promise<Record<string, unknown>> {
+  return requestWithOptionalX402<Record<string, unknown>>(
+    "/trade/execute",
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    },
+    token
+  );
+}
+
+export async function quoteLiquidity(
+  input: Record<string, unknown> | LiquidityActionRequest,
+  token?: string
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    "/liquidity/quote",
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    },
+    token
+  );
+}
+
+export async function runLiquidityAction(
+  action: "create" | "increase" | "decrease" | "collect",
+  input: LiquidityActionRequest,
+  token?: string
+): Promise<Record<string, unknown>> {
+  return requestWithOptionalX402<Record<string, unknown>>(
+    `/liquidity/${action}`,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    },
+    token
+  );
+}
+
+export async function listLiquidityActions(limit = 200, token?: string): Promise<LiquidityActionVm[]> {
+  const payload = await request<{ actions?: LiquidityActionVm[] }>(
+    `/api/liquidity/actions?limit=${encodeURIComponent(String(limit))}`,
+    {},
+    token
+  );
+  return payload.actions ?? [];
+}
+
+export async function getLiquidityHistory(
+  input?: { walletAddress?: string; chainId?: number },
+  token?: string
+): Promise<Record<string, unknown>> {
+  const search = new URLSearchParams();
+  if (input?.walletAddress) search.set("walletAddress", input.walletAddress);
+  if (typeof input?.chainId === "number") search.set("chainId", String(input.chainId));
+  const query = search.toString();
+  const path = query.length > 0 ? `/liquidity/history?${query}` : "/liquidity/history";
+  return request<Record<string, unknown>>(path, {}, token);
+}
+
+export async function previewMarketplaceSku(
+  sku: string,
+  params: Record<string, unknown> = {},
+  token?: string
+): Promise<Record<string, unknown>> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    query.set(key, String(value));
+  }
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  return request<Record<string, unknown>>(
+    `/marketplace/products/${encodeURIComponent(sku)}/preview${suffix}`,
+    {},
+    token
+  );
+}
+
+export async function purchaseMarketplaceSku(
+  sku: string,
+  params: Record<string, unknown> = {},
+  token?: string
+): Promise<Record<string, unknown>> {
+  return requestWithOptionalX402<Record<string, unknown>>(
+    `/marketplace/products/${encodeURIComponent(sku)}/purchase`,
+    {
+      method: "POST",
+      body: JSON.stringify(params)
+    },
+    token
+  );
 }
 
 function unwrapApiPayload<T>(payload: unknown): T {

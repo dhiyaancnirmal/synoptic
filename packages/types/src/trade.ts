@@ -7,6 +7,8 @@ export type TradeStatus =
   | "reverted"
   | "failed";
 
+export type TradeIntent = "swap" | "order";
+
 export interface Trade {
   id: string;
   agentId: string;
@@ -16,6 +18,9 @@ export interface Trade {
   amountIn: string;
   amountOut: string;
   routingType: string;
+  intent?: TradeIntent;
+  quoteRequestId?: string;
+  swapRequestId?: string;
   status: TradeStatus;
   executionTxHash?: string;
   kiteAttestationTx?: string;

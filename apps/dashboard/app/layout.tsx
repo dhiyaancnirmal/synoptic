@@ -15,7 +15,7 @@ const m290 = localFont({
 
 export const metadata: Metadata = {
   title: "Synoptic",
-  description: "Agent command center for x402 payments, spot execution, and on-chain visibility"
+  description: "Agent command center for x402 payments, trading + LP execution, and on-chain visibility"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

@@ -5,8 +5,12 @@ import { usePathname } from "next/navigation";
 
 const links = [
   { href: "/overview", label: "Overview" },
-  { href: "/execute", label: "Execute" },
-  { href: "/evidence", label: "Evidence" }
+  { href: "/agents", label: "Agents" },
+  { href: "/trading", label: "Trading" },
+  { href: "/payments", label: "Payments" },
+  { href: "/streams", label: "Streams" },
+  { href: "/marketplace", label: "Marketplace" },
+  { href: "/activity", label: "Activity" }
 ];
 
 interface RouteSidebarNavProps {
@@ -16,14 +20,21 @@ interface RouteSidebarNavProps {
 
 export function RouteSidebarNav({ apiHealth, connectionStatus }: RouteSidebarNavProps) {
   const pathname = usePathname();
+  const isHealthy = apiHealth === "ok" && connectionStatus === "connected";
+
+  function isActivePath(href: string): boolean {
+    if (pathname === href) return true;
+    if (href === "/overview" && pathname === "/cockpit") return true;
+    return pathname.startsWith(`${href}/`);
+  }
 
   return (
     <aside className="dash-sidebar">
-      <div>
+      <div className="dash-sidebar-brand">
         <Link href="/" className="logo-font dash-logo-s">
           S
         </Link>
-        <p className="pixel-text dash-sidebar-label">Synoptic</p>
+        <p className="pixel-text dash-sidebar-label">synoptic</p>
       </div>
 
       <nav className="dash-tab-list" aria-label="Primary">
@@ -31,7 +42,7 @@ export function RouteSidebarNav({ apiHealth, connectionStatus }: RouteSidebarNav
           <Link
             key={link.href}
             href={link.href}
-            className={`dash-tab ${pathname === link.href ? "active" : ""}`}
+            className={`dash-tab ${isActivePath(link.href) ? "active" : ""}`}
           >
             {link.label}
           </Link>
@@ -39,10 +50,9 @@ export function RouteSidebarNav({ apiHealth, connectionStatus }: RouteSidebarNav
       </nav>
 
       <div className="dash-sidebar-foot">
-        <p className="pixel-text">Kite Testnet 2368</p>
-        <p className={`dash-health ${apiHealth === "ok" ? "ok" : "warn"}`}>API {apiHealth}</p>
-        <p className={`dash-health ${connectionStatus === "connected" ? "ok" : "warn"}`}>
-          WS {connectionStatus}
+        <p className="pixel-text">Network 2368 / 10143</p>
+        <p className={`dash-health ${isHealthy ? "ok" : "warn"}`}>
+          API {apiHealth} · WS {connectionStatus}
         </p>
       </div>
     </aside>

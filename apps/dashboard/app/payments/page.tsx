@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { PaymentsRouteClient } from "@/components/dashboard/routes/PaymentsRouteClient";
 
 export default function PaymentsPage() {
-  redirect("/evidence");
+  return <PaymentsRouteClient />;
 }

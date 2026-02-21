@@ -30,143 +30,62 @@ export default async function HomePage() {
           </header>
 
           <div className="hero-copy">
-            <p className="pixel-text hero-kicker">Autonomous Agent Operations</p>
-            <h2>Control and monitor autonomous agent execution across Kite and Monad.</h2>
+            <p className="pixel-text hero-kicker">Agent Operations Platform</p>
+            <h2>Operate autonomous agents with control, visibility, and audit-ready records.</h2>
             <p>
-              Start and stop agent sessions, track x402 payment lifecycles from challenge to
-              settlement, monitor spot trade execution with full attestation traceability, and
-              observe real-time event streams from a unified workspace.
+              Synoptic is the command center for teams running agents across Kite and Monad.
+              Manage sessions, confirm x402 payments, execute swap/order + liquidity workflows, and
+              review live activity from one workspace.
             </p>
             <div className="hero-actions">
-              <Link href="/overview" className="action-primary">
+              <Link href="/agents" className="action-primary">
                 Open Workspace
               </Link>
-              <a href="#capabilities" className="action-secondary">
-                View Capabilities
-              </a>
+              <Link href="/login" className="action-secondary">
+                Sign In
+              </Link>
             </div>
           </div>
         </div>
       </section>
 
-      <section id="capabilities" className="landing-section">
+      <section id="platform" className="landing-section">
         <div className="section-inner">
           <div className="section-header">
-            <p className="pixel-text section-label">Platform Capabilities</p>
-            <h3>Everything you need to operate autonomous agents at scale.</h3>
+            <p className="pixel-text section-label">What Synoptic Does</p>
+            <h3>One platform for operating agents from execution to evidence.</h3>
           </div>
           <div className="capability-cards">
             <article className="capability-card">
-              <div className="capability-icon">
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
-                </svg>
-              </div>
-              <h4>Agent Control</h4>
+              <p className="pixel-text capability-index">01</p>
+              <h4>Control Agent Sessions</h4>
               <p>
-                Start, pause, resume, and terminate agent sessions from dedicated screens. Track
-                session state and request idempotency for all lifecycle operations.
+                Start, pause, resume, and stop agent sessions with predictable lifecycle states and
+                idempotent requests.
               </p>
             </article>
             <article className="capability-card">
-              <div className="capability-icon">
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <rect x="2" y="5" width="20" height="14" rx="2" />
-                  <path d="M2 10h20" />
-                </svg>
-              </div>
-              <h4>Payment Automation</h4>
+              <p className="pixel-text capability-index">02</p>
+              <h4>Track x402 Payments</h4>
               <p>
-                Monitor x402 payment lifecycle: challenge issuance, user settlement, and
-                confirmation. Full visibility into payment state machines and failure recovery.
+                Monitor challenge, settlement, confirmation, and retry paths so payment failures
+                are visible and recoverable.
               </p>
             </article>
             <article className="capability-card">
-              <div className="capability-icon">
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M3 3v18h18" />
-                  <path d="M7 16l4-4 4 4 6-6" />
-                </svg>
-              </div>
-              <h4>Trade Execution</h4>
+              <p className="pixel-text capability-index">03</p>
+              <h4>Execute and Verify Trades</h4>
               <p>
-                Execute spot trades through the interface. Track progression from quote through
-                confirmation with Kite attestation linkage for every transaction.
+                Run swaps, orders, and LP actions with routing metadata plus transaction and
+                attestation context.
               </p>
             </article>
             <article className="capability-card">
-              <div className="capability-icon">
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                </svg>
-              </div>
-              <h4>Stream Monitoring</h4>
+              <p className="pixel-text capability-index">04</p>
+              <h4>Monitor Live Operations</h4>
               <p>
-                Real-time event streams via WebSocket with polling fallback. View stream health
-                status, observe cross-chain activity, and maintain audit trails.
-              </p>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <section className="landing-section proof-section">
-        <div className="section-inner">
-          <div className="section-header">
-            <p className="pixel-text section-label">Verifiable Execution</p>
-            <h3>Every operation is traceable. Every transaction is auditable.</h3>
-          </div>
-          <div className="proof-grid">
-            <article className="proof-card">
-              <div className="proof-label pixel-text">Transactions</div>
-              <h4>Execution Records</h4>
-              <p>
-                View confirmed transaction hashes, block confirmations, and gas consumption for all
-                agent-initiated operations on Kite and Monad.
-              </p>
-            </article>
-            <article className="proof-card">
-              <div className="proof-label pixel-text">Settlement</div>
-              <h4>Payment States</h4>
-              <p>
-                Full x402 payment lifecycle: challenge issued, settlement submitted, confirmation
-                received. Track settlement failures and retry outcomes.
-              </p>
-            </article>
-            <article className="proof-card">
-              <div className="proof-label pixel-text">Attestations</div>
-              <h4>Kite Attestation Linkage</h4>
-              <p>
-                Every trade and payment is signed by Kite validators. Retrieve attestation IDs and
-                verify proofs independently.
+                Follow real-time streams with health visibility, timestamped activity logs, and a
+                complete operational trail.
               </p>
             </article>
           </div>
@@ -176,33 +95,29 @@ export default async function HomePage() {
       <section className="landing-section ops-section">
         <div className="section-inner">
           <div className="section-header">
-            <p className="pixel-text section-label">Operations</p>
-            <h3>Production-grade observability for agent infrastructure.</h3>
+            <p className="pixel-text section-label">Who It Serves</p>
+            <h3>Built for teams operating agents in production.</h3>
           </div>
           <div className="ops-grid">
             <article className="ops-card">
-              <h4>Stream Health</h4>
+              <h4>Operations Teams</h4>
               <p>
-                QuickNode-powered ingestion streams with real-time health indicators. Degradation
-                alerts and automatic fallback behavior.
-              </p>
-              <div className="ops-status">
-                <span className="status-dot healthy"></span>
-                <span className="pixel-text">Operational</span>
-              </div>
-            </article>
-            <article className="ops-card">
-              <h4>Audit Trail</h4>
-              <p>
-                Complete event history with timestamps, agent IDs, and correlation data. Export logs
-                for compliance and incident response.
+                Keep a clear view of active agents, service health, and exceptions without digging
+                through multiple tools.
               </p>
             </article>
             <article className="ops-card">
-              <h4>Session Isolation</h4>
+              <h4>Trading Teams</h4>
               <p>
-                Session-gated access with request idempotency. Each workspace operation is scoped to
-                authenticated sessions.
+                Manage execution flow from quote to confirmation while preserving traceability for
+                every transaction.
+              </p>
+            </article>
+            <article className="ops-card">
+              <h4>Risk and Compliance</h4>
+              <p>
+                Access payment states, event logs, and attestations needed for audits, incident
+                response, and post-trade review.
               </p>
             </article>
           </div>
@@ -212,14 +127,14 @@ export default async function HomePage() {
       <footer className="landing-footer">
         <div className="footer-content">
           <div className="footer-main">
-            <p className="pixel-text footer-label">Ready to start?</p>
-            <h3>Your agent operations workspace is one click away.</h3>
+            <p className="pixel-text footer-label">Get Started</p>
+            <h3>Use the workspace to run agents with full operational context.</h3>
             <p className="footer-description">
-              Access dedicated screens for agents, payments, trading, and activity. Session
-              bootstrap available at <code>/login</code>.
+              Core routes cover agent lifecycle, payments, trading, activity, and marketplace
+              workflows.
             </p>
             <div className="footer-actions">
-              <Link href="/overview" className="action-primary">
+              <Link href="/agents" className="action-primary">
                 Open Workspace
               </Link>
               <Link href="/login" className="action-secondary">
@@ -229,20 +144,20 @@ export default async function HomePage() {
           </div>
           <div className="footer-routes">
             <div className="route-link">
-              <span className="pixel-text">/overview</span>
-              <span>Identity + readiness</span>
+              <span className="pixel-text">/agents</span>
+              <span>Agent lifecycle control</span>
             </div>
             <div className="route-link">
-              <span className="pixel-text">/execute</span>
-              <span>Paid action execution</span>
+              <span className="pixel-text">/payments</span>
+              <span>x402 lifecycle tracking</span>
             </div>
             <div className="route-link">
-              <span className="pixel-text">/evidence</span>
-              <span>Payment + chain proofs</span>
+              <span className="pixel-text">/trading</span>
+              <span>Trade execution workspace</span>
             </div>
             <div className="route-link">
-              <span className="pixel-text">/login</span>
-              <span>Session bootstrap</span>
+              <span className="pixel-text">/activity</span>
+              <span>Event and stream history</span>
             </div>
           </div>
         </div>

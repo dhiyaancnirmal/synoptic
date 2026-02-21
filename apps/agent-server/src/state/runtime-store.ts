@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import type { ActivityEvent, Agent, Payment, Trade } from "@synoptic/types";
+import type {
+  ActivityEvent,
+  Agent,
+  LiquidityAction,
+  LiquidityActionStatus,
+  Payment,
+  Trade
+} from "@synoptic/types";
 
 export type CompatAgentStatus = "ACTIVE" | "PAUSED" | "STOPPED";
 export type CompatOrderStatus = "PENDING" | "EXECUTED" | "REJECTED";
@@ -25,6 +32,19 @@ export interface CompatEvent {
   metadata: Record<string, unknown>;
 }
 
+export interface StreamBlockRecord {
+  id: string;
+  blockNumber: number;
+  blockHash?: string;
+  transactionCount: number;
+  gasUsed?: string;
+  timestamp?: number;
+  rawPayload?: Record<string, unknown>;
+  receivedAt: string;
+}
+
+export interface LiquidityActionRecord extends LiquidityAction {}
+
 export interface RuntimeStoreContract {
   listAgents(): Promise<Agent[]>;
   getAgent(id: string): Promise<Agent | undefined>;
@@ -41,6 +61,9 @@ export interface RuntimeStoreContract {
     amountIn: string;
     amountOut: string;
     routingType: string;
+    intent?: Trade["intent"];
+    quoteRequestId?: string;
+    swapRequestId?: string;
     status: Trade["status"];
     strategyReason?: string;
     quoteRequest?: Record<string, unknown>;
@@ -55,6 +78,8 @@ export interface RuntimeStoreContract {
       kiteAttestationTx?: string;
       errorMessage?: string;
       gasUsed?: string;
+      quoteRequestId?: string;
+      swapRequestId?: string;
     }
   ): Promise<Trade | undefined>;
   listPayments(): Promise<Payment[]>;
@@ -121,15 +146,7 @@ export interface RuntimeStoreContract {
     failedTxCount: number;
     totalGasUsed?: string;
   }): Promise<{ id: string }>;
-  queryStreamBlocks(limit?: number): Promise<Array<{
-    id: string;
-    blockNumber: number;
-    blockHash?: string;
-    transactionCount: number;
-    gasUsed?: string;
-    timestamp?: number;
-    receivedAt: string;
-  }>>;
+  queryStreamBlocks(limit?: number): Promise<StreamBlockRecord[]>;
   queryDerivedTransfers(limit?: number): Promise<Array<{
     id: string;
     blockNumber: number;
@@ -178,6 +195,33 @@ export interface RuntimeStoreContract {
     resultHash?: string;
     createdAt: string;
   }>>;
+  createLiquidityAction(input: {
+    agentId: string;
+    actionType: LiquidityAction["actionType"];
+    chainId: number;
+    token0: string;
+    token1: string;
+    feeTier: number;
+    preset: LiquidityAction["preset"];
+    lowerBoundPct: number;
+    upperBoundPct: number;
+    amount0: string;
+    amount1: string;
+    positionId?: string;
+    txHash?: string;
+    status: LiquidityAction["status"];
+    errorMessage?: string;
+  }): Promise<LiquidityActionRecord>;
+  updateLiquidityAction(
+    id: string,
+    input: {
+      status?: LiquidityActionStatus;
+      txHash?: string;
+      positionId?: string;
+      errorMessage?: string;
+    }
+  ): Promise<LiquidityActionRecord | undefined>;
+  listLiquidityActions(limit?: number): Promise<LiquidityActionRecord[]>;
   compatAgents(): Promise<Array<{ agentId: string; ownerAddress: string; status: CompatAgentStatus; createdAt: string }>>;
   compatAgent(id: string): Promise<{ agentId: string; ownerAddress: string; status: CompatAgentStatus; createdAt: string } | undefined>;
   compatEvents(agentId: string): Promise<CompatEvent[]>;
@@ -196,6 +240,7 @@ export class RuntimeStore implements RuntimeStoreContract {
   private readonly derivedTransfersList: Array<{ id: string; blockNumber: number; txHash: string; logIndex: number; fromAddress: string; toAddress: string; tokenAddress: string; amount?: string; tokenSymbol?: string; createdAt: string }> = [];
   private readonly contractActivityMap = new Map<string, { id: string; contractAddress: string; blockStart: number; blockEnd: number; txCount: number; uniqueCallers: number; failedTxCount: number; totalGasUsed?: string; computedAt: string }>();
   private readonly purchases = new Map<string, { id: string; agentId?: string; sku: string; params?: Record<string, unknown>; paymentId?: string; status: string; resultHash?: string; resultPayload?: Record<string, unknown>; createdAt: string }>();
+  private readonly liquidityActions = new Map<string, LiquidityActionRecord>();
 
   async listAgents(): Promise<Agent[]> {
     return [...this.agents.values()];
@@ -264,6 +309,9 @@ export class RuntimeStore implements RuntimeStoreContract {
     amountIn: string;
     amountOut: string;
     routingType: string;
+    intent?: Trade["intent"];
+    quoteRequestId?: string;
+    swapRequestId?: string;
     status: Trade["status"];
     strategyReason?: string;
     quoteRequest?: Record<string, unknown>;
@@ -280,6 +328,9 @@ export class RuntimeStore implements RuntimeStoreContract {
       amountIn: input.amountIn,
       amountOut: input.amountOut,
       routingType: input.routingType,
+      intent: input.intent,
+      quoteRequestId: input.quoteRequestId,
+      swapRequestId: input.swapRequestId,
       status: input.status,
       strategyReason: input.strategyReason,
       createdAt: now,
@@ -297,6 +348,8 @@ export class RuntimeStore implements RuntimeStoreContract {
       kiteAttestationTx?: string;
       errorMessage?: string;
       gasUsed?: string;
+      quoteRequestId?: string;
+      swapRequestId?: string;
     }
   ): Promise<Trade | undefined> {
     const existing = this.trades.get(id);
@@ -306,6 +359,8 @@ export class RuntimeStore implements RuntimeStoreContract {
       status,
       executionTxHash: details?.executionTxHash ?? existing.executionTxHash,
       kiteAttestationTx: details?.kiteAttestationTx ?? existing.kiteAttestationTx,
+      quoteRequestId: details?.quoteRequestId ?? existing.quoteRequestId,
+      swapRequestId: details?.swapRequestId ?? existing.swapRequestId,
       confirmedAt: status === "confirmed" ? new Date().toISOString() : existing.confirmedAt
     };
     this.trades.set(id, updated);
@@ -455,8 +510,8 @@ export class RuntimeStore implements RuntimeStoreContract {
     return [...this.streamBlocksByNumber.values()]
       .sort((a, b) => b.blockNumber - a.blockNumber)
       .slice(0, limit)
-      .map(({ id, blockNumber, blockHash, transactionCount, gasUsed, timestamp, receivedAt }) => ({
-        id, blockNumber, blockHash, transactionCount, gasUsed, timestamp, receivedAt
+      .map(({ id, blockNumber, blockHash, transactionCount, gasUsed, timestamp, rawPayload, receivedAt }) => ({
+        id, blockNumber, blockHash, transactionCount, gasUsed, timestamp, rawPayload, receivedAt
       }));
   }
 
@@ -505,6 +560,77 @@ export class RuntimeStore implements RuntimeStoreContract {
       .map(({ id, agentId, sku, paymentId, status, resultHash, createdAt }) => ({
         id, agentId, sku, paymentId, status, resultHash, createdAt
       }));
+  }
+
+  async createLiquidityAction(input: {
+    agentId: string;
+    actionType: LiquidityAction["actionType"];
+    chainId: number;
+    token0: string;
+    token1: string;
+    feeTier: number;
+    preset: LiquidityAction["preset"];
+    lowerBoundPct: number;
+    upperBoundPct: number;
+    amount0: string;
+    amount1: string;
+    positionId?: string;
+    txHash?: string;
+    status: LiquidityAction["status"];
+    errorMessage?: string;
+  }): Promise<LiquidityActionRecord> {
+    const now = new Date().toISOString();
+    const record: LiquidityActionRecord = {
+      id: randomUUID(),
+      agentId: input.agentId,
+      actionType: input.actionType,
+      chainId: input.chainId,
+      token0: input.token0,
+      token1: input.token1,
+      feeTier: input.feeTier,
+      preset: input.preset,
+      lowerBoundPct: input.lowerBoundPct,
+      upperBoundPct: input.upperBoundPct,
+      amount0: input.amount0,
+      amount1: input.amount1,
+      positionId: input.positionId,
+      txHash: input.txHash,
+      status: input.status,
+      errorMessage: input.errorMessage,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.liquidityActions.set(record.id, record);
+    return record;
+  }
+
+  async updateLiquidityAction(
+    id: string,
+    input: {
+      status?: LiquidityActionStatus;
+      txHash?: string;
+      positionId?: string;
+      errorMessage?: string;
+    }
+  ): Promise<LiquidityActionRecord | undefined> {
+    const existing = this.liquidityActions.get(id);
+    if (!existing) return undefined;
+    const updated: LiquidityActionRecord = {
+      ...existing,
+      status: input.status ?? existing.status,
+      txHash: input.txHash ?? existing.txHash,
+      positionId: input.positionId ?? existing.positionId,
+      errorMessage: input.errorMessage ?? existing.errorMessage,
+      updatedAt: new Date().toISOString()
+    };
+    this.liquidityActions.set(id, updated);
+    return updated;
+  }
+
+  async listLiquidityActions(limit = 200): Promise<LiquidityActionRecord[]> {
+    return [...this.liquidityActions.values()]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit);
   }
 
   async compatAgents() {

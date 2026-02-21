@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { TradingRouteClient } from "@/components/dashboard/routes/TradingRouteClient";
 
 export default function TradingPage() {
-  redirect("/execute");
+  return <TradingRouteClient />;
 }

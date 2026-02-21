@@ -55,6 +55,9 @@ export const trades = pgTable(
     amountIn: text("amount_in").notNull(),
     amountOut: text("amount_out").notNull(),
     routingType: text("routing_type").notNull(),
+    intent: text("intent"),
+    quoteRequestId: text("quote_request_id"),
+    swapRequestId: text("swap_request_id"),
     slippage: numeric("slippage"),
     status: text("status").notNull(),
     quoteRequest: jsonb("quote_request"),
@@ -188,5 +191,36 @@ export const marketplacePurchases = pgTable(
   (table) => ({
     agentIdx: index("idx_purchases_agent_id").on(table.agentId),
     skuIdx: index("idx_purchases_sku").on(table.sku)
+  })
+);
+
+export const liquidityActions = pgTable(
+  "liquidity_actions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.id),
+    actionType: text("action_type").notNull(),
+    chainId: integer("chain_id").notNull(),
+    token0: text("token0").notNull(),
+    token1: text("token1").notNull(),
+    feeTier: integer("fee_tier").notNull(),
+    preset: text("preset").notNull(),
+    lowerBoundPct: numeric("lower_bound_pct").notNull(),
+    upperBoundPct: numeric("upper_bound_pct").notNull(),
+    amount0: text("amount0").notNull(),
+    amount1: text("amount1").notNull(),
+    positionId: text("position_id"),
+    txHash: text("tx_hash"),
+    status: text("status").notNull(),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    agentIdx: index("idx_liquidity_actions_agent_id").on(table.agentId),
+    statusIdx: index("idx_liquidity_actions_status").on(table.status),
+    createdIdx: index("idx_liquidity_actions_created").on(table.createdAt)
   })
 );

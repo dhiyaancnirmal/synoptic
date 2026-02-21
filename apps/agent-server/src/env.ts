@@ -1,6 +1,7 @@
 export interface AgentServerEnv {
   port: number;
   dashboardUrl: string;
+  allowInsecureDevAuthBypass: boolean;
   agentTickIntervalMs: number;
   agentMaxConsecutiveErrors: number;
   authTokenSecret: string;
@@ -84,6 +85,11 @@ export function loadEnv(): AgentServerEnv {
   return {
     port: readNumber(process.env.PORT, 3001),
     dashboardUrl: process.env.DASHBOARD_URL ?? "http://localhost:3000",
+    allowInsecureDevAuthBypass: readBoolean(
+      process.env.ALLOW_INSECURE_DEV_AUTH_BYPASS ??
+      process.env.SYNOPTIC_ALLOW_INSECURE_DEV_AUTH_BYPASS,
+      false
+    ),
     agentTickIntervalMs: readNumber(process.env.AGENT_TICK_INTERVAL_MS, 30_000),
     agentMaxConsecutiveErrors: readNumber(process.env.AGENT_MAX_CONSECUTIVE_ERRORS, 3),
     authTokenSecret:

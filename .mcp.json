@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "kite-codex-synoptic": {
+      "type": "http",
+      "url": "https://neo.dev.gokite.ai/v1/mcp",
+      "headers": {
+        "CLIENT_ID": "client_agent_M8Z7lTUmSNB3JK3ms8JTABOh"
+      },
+      "oauth": {
+        "clientId": "client_agent_M8Z7lTUmSNB3JK3ms8JTABOh"
+      }
+    }
+  }
+}

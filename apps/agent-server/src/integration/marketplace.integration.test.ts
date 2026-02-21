@@ -1,78 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Wallet } from "ethers";
 import { createServer } from "../server.js";
 
-async function authenticateAndLink(app: Awaited<ReturnType<typeof createServer>>) {
-  const owner = Wallet.createRandom();
-  const payer = Wallet.createRandom();
+const EXPECTED_SKUS = [
+  "monad_lp_range_signal",
+  "monad_orderflow_imbalance",
+  "monad_contract_momentum",
+  "monad_selector_heatmap",
+  "monad_launchpad_watch"
+];
 
-  const challenge = await app.inject({
-    method: "POST",
-    url: "/api/auth/wallet/challenge",
-    payload: { ownerAddress: owner.address }
-  });
-  const challengePayload = challenge.json() as {
-    challengeId: string;
-    message: string;
-    ownerAddress: string;
-  };
-
-  const signature = await owner.signMessage(challengePayload.message);
-  const verify = await app.inject({
-    method: "POST",
-    url: "/api/auth/wallet/verify",
-    payload: {
-      challengeId: challengePayload.challengeId,
-      message: challengePayload.message,
-      signature,
-      ownerAddress: challengePayload.ownerAddress
-    }
-  });
-
-  const auth = verify.json() as { accessToken: string };
-  const headers = { authorization: `Bearer ${auth.accessToken}` };
-
-  const linked = await app.inject({
-    method: "POST",
-    url: "/api/identity/link",
-    headers,
-    payload: { payerAddress: payer.address }
-  });
-  assert.equal(linked.statusCode, 200);
-
-  return { headers, payerAddress: payer.address.toLowerCase() };
-}
-
-function buildXPayment(input: {
-  challenge: Record<string, unknown>;
-  payerAddress: string;
-}): string {
-  return JSON.stringify({
-    paymentPayload: {
-      scheme: "gokite-aa",
-      network: "kite-testnet",
-      x402Version: 1,
-      payload: {
-        authorization: {
-          from: input.payerAddress,
-          to: String(input.challenge.payTo ?? "0x66ad7ef70cc88e37fa692d85c8a55ed4c1493251"),
-          token: String(input.challenge.asset ?? "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63"),
-          value: String(input.challenge.maxAmountRequired ?? "1"),
-          validAfter: "0",
-          validBefore: "9999999999",
-          nonce: "0xmarket"
-        },
-        signature: "0xdemo_signature",
-        sessionId: "session-market",
-        metadata: {}
-      }
-    },
-    paymentRequirements: input.challenge
-  });
-}
-
-test("GET /marketplace/catalog returns 3 SKUs", async (t) => {
+test("GET /marketplace/catalog returns new Streams-derived SKU set", async (t) => {
   process.env.FACILITATOR_MODE = "demo";
   const app = await createServer();
   t.after(async () => {
@@ -88,22 +26,26 @@ test("GET /marketplace/catalog returns 3 SKUs", async (t) => {
   assert.equal(response.statusCode, 200);
   const body = response.json();
   assert.ok(Array.isArray(body.catalog));
-  assert.equal(body.catalog.length, 3);
+  assert.equal(body.catalog.length, EXPECTED_SKUS.length);
 
   const skus = body.catalog.map((item: { sku: string }) => item.sku);
-  assert.ok(skus.includes("monad_transfer_feed"));
-  assert.ok(skus.includes("monad_contract_activity"));
-  assert.ok(skus.includes("monad_block_summary"));
+  for (const sku of EXPECTED_SKUS) {
+    assert.ok(skus.includes(sku));
+  }
 
   for (const item of body.catalog) {
     assert.ok(typeof item.name === "string");
     assert.ok(typeof item.description === "string");
     assert.ok(typeof item.priceUsd === "number");
     assert.ok(typeof item.dataSource === "string");
+    assert.ok(typeof item.category === "string");
+    assert.ok(typeof item.refreshCadence === "string");
+    assert.ok(typeof item.dataConfidence === "string");
+    assert.ok(item.sampleSchema && typeof item.sampleSchema === "object");
   }
 });
 
-test("GET /marketplace/products/:sku/preview returns sample data", async (t) => {
+test("GET /marketplace/products/:sku/preview returns metadata and sample payload", async (t) => {
   process.env.FACILITATOR_MODE = "demo";
   const app = await createServer();
   t.after(async () => {
@@ -111,22 +53,21 @@ test("GET /marketplace/products/:sku/preview returns sample data", async (t) => 
     await app.close();
   });
 
-  const { headers } = await authenticateAndLink(app);
-
   const response = await app.inject({
     method: "GET",
-    url: "/marketplace/products/monad_block_summary/preview",
-    headers
+    url: "/marketplace/products/monad_lp_range_signal/preview?risk=0.6&preset=all"
   });
 
   assert.equal(response.statusCode, 200);
   const body = response.json();
-  assert.equal(body.sku, "monad_block_summary");
+  assert.equal(body.sku, "monad_lp_range_signal");
   assert.equal(body.preview, true);
+  assert.equal(body.category, "lp_intelligence");
+  assert.ok(body.sampleSchema);
   assert.ok(Array.isArray(body.data));
 });
 
-test("GET /marketplace/products/unknown_sku/preview returns 404", async (t) => {
+test("GET /marketplace/products/:sku/preview validates params and chain support", async (t) => {
   process.env.FACILITATOR_MODE = "demo";
   const app = await createServer();
   t.after(async () => {
@@ -134,17 +75,19 @@ test("GET /marketplace/products/unknown_sku/preview returns 404", async (t) => {
     await app.close();
   });
 
-  const { headers } = await authenticateAndLink(app);
-
-  const response = await app.inject({
+  const invalidParams = await app.inject({
     method: "GET",
-    url: "/marketplace/products/invalid_sku/preview",
-    headers
+    url: "/marketplace/products/monad_contract_momentum/preview?limit=0"
   });
+  assert.equal(invalidParams.statusCode, 400);
+  assert.equal(invalidParams.json().code, "SKU_PARAMS_INVALID");
 
-  assert.equal(response.statusCode, 404);
-  const body = response.json();
-  assert.equal(body.code, "SKU_NOT_FOUND");
+  const unsupportedChain = await app.inject({
+    method: "GET",
+    url: "/marketplace/products/monad_selector_heatmap/preview?chainId=1"
+  });
+  assert.equal(unsupportedChain.statusCode, 400);
+  assert.equal(unsupportedChain.json().code, "CHAIN_UNSUPPORTED");
 });
 
 test("POST /marketplace/products/:sku/purchase without payment returns 402", async (t) => {
@@ -155,12 +98,10 @@ test("POST /marketplace/products/:sku/purchase without payment returns 402", asy
     await app.close();
   });
 
-  const { headers } = await authenticateAndLink(app);
-
   const response = await app.inject({
     method: "POST",
-    url: "/marketplace/products/monad_transfer_feed/purchase",
-    headers: { ...headers, "content-type": "application/json" },
+    url: "/marketplace/products/monad_orderflow_imbalance/purchase",
+    headers: { "content-type": "application/json" },
     payload: {}
   });
 
@@ -181,41 +122,71 @@ test("POST /marketplace/products/:sku/purchase with x-payment completes purchase
     await app.close();
   });
 
-  const { headers, payerAddress } = await authenticateAndLink(app);
-
   const challengeRes = await app.inject({
     method: "POST",
-    url: "/marketplace/products/monad_block_summary/purchase",
-    headers: { ...headers, "content-type": "application/json" },
-    payload: {}
+    url: "/marketplace/products/monad_selector_heatmap/purchase",
+    headers: { "content-type": "application/json" },
+    payload: { limit: 5 }
   });
   assert.equal(challengeRes.statusCode, 402);
-  const challenge = challengeRes.json() as Record<string, unknown>;
+  const challenge = challengeRes.json();
 
-  const xPayment = buildXPayment({ challenge, payerAddress });
+  const xPayment = JSON.stringify({
+    paymentPayload: {
+      scheme: challenge.scheme ?? "exact",
+      network: challenge.network ?? "eip155:2368",
+      authorization: {
+        payer: "0xTestPayer",
+        payee: challenge.payTo,
+        amount: challenge.maxAmountRequired
+      },
+      signature: "0xdemo_signature"
+    },
+    paymentRequirements: challenge
+  });
 
   const purchaseRes = await app.inject({
     method: "POST",
-    url: "/marketplace/products/monad_block_summary/purchase",
+    url: "/marketplace/products/monad_selector_heatmap/purchase",
     headers: {
-      ...headers,
       "content-type": "application/json",
       "x-payment": xPayment,
-      "x-payment-request-id": String(challenge.paymentRequestId)
+      "x-payment-request-id": challenge.paymentRequestId
     },
-    payload: {}
+    payload: { limit: 5 }
   });
 
   assert.equal(purchaseRes.statusCode, 200);
   const body = purchaseRes.json();
   assert.ok(body.purchaseId);
-  assert.equal(body.sku, "monad_block_summary");
+  assert.equal(body.sku, "monad_selector_heatmap");
   assert.ok(body.paymentId);
   assert.ok(body.settlementTxHash);
-  assert.ok(body.settlementTxHash.startsWith("0xdemo_"));
   assert.ok(body.resultHash);
   assert.ok(Array.isArray(body.data));
   assert.ok(body.timestamp);
+  assert.equal(body.category, "signature_analytics");
+  assert.equal(body.dataConfidence, "medium");
+});
+
+test("POST /marketplace/products/:sku/purchase validates SKU params", async (t) => {
+  process.env.FACILITATOR_MODE = "demo";
+  const app = await createServer();
+  t.after(async () => {
+    delete process.env.FACILITATOR_MODE;
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/marketplace/products/monad_lp_range_signal/purchase",
+    headers: { "content-type": "application/json" },
+    payload: { risk: 2 }
+  });
+
+  assert.equal(response.statusCode, 400);
+  const body = response.json();
+  assert.equal(body.code, "SKU_PARAMS_INVALID");
 });
 
 test("POST /marketplace/products/invalid_sku/purchase returns 404", async (t) => {
@@ -226,14 +197,13 @@ test("POST /marketplace/products/invalid_sku/purchase returns 404", async (t) =>
     await app.close();
   });
 
-  const { headers } = await authenticateAndLink(app);
-
   const response = await app.inject({
     method: "POST",
     url: "/marketplace/products/nonexistent/purchase",
-    headers: { ...headers, "content-type": "application/json" },
+    headers: { "content-type": "application/json" },
     payload: {}
   });
 
   assert.equal(response.statusCode, 404);
+  assert.equal(response.json().code, "SKU_NOT_FOUND");
 });

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const REQUIRED_NODE = "22.0.0";
+const REQUIRED_NODE = "22.22.0";
 const REQUIRED_PNPM = "9.15.4";
 
 function parse(version) {

@@ -27,6 +27,11 @@ export interface TradingAdapter {
     amountIn: string;
     chainId: number;
     swapper: string;
+    intent?: "swap" | "order";
+    routingType?: string;
+    slippageTolerance?: number;
+    urgency?: "normal" | "fast";
+    autoSlippage?: boolean;
   }): Promise<{ quoteResponse: Record<string, unknown>; amountOut: string }>;
   executeSwap(input: {
     quoteResponse: Record<string, unknown>;

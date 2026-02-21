@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenCode Agent Manager"
+  short_description: "Run and manage OpenCode sub-agents from Codex"
+  default_prompt: "Use this skill to start OpenCode serve, run role-based agents, and inspect sessions/stats/exports."

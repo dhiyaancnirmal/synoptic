@@ -54,6 +54,9 @@ export interface Trade {
   amountIn: string;
   amountOut: string;
   routingType: string;
+  intent?: "swap" | "order";
+  quoteRequestId?: string;
+  swapRequestId?: string;
   status: TradeStatus;
   executionTxHash?: string;
   executionChain?: ActivityChain;

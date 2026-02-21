@@ -1,7 +1,7 @@
 import { JsonRpcProvider, Wallet } from "ethers";
 import type { TradingAdapter, UnsignedTransaction } from "../adapters/contracts.js";
 import { UniswapClient } from "./uniswap-client.js";
-import type { UniswapQuoteResponse } from "./uniswap-types.js";
+import type { UniswapQuoteRequest, UniswapQuoteResponse } from "./uniswap-types.js";
 import { signAndBroadcastSwap } from "./swap-executor.js";
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -89,6 +89,11 @@ export class RealTradingAdapter implements TradingAdapter {
     amountIn: string;
     chainId: number;
     swapper: string;
+    intent?: "swap" | "order";
+    routingType?: string;
+    slippageTolerance?: number;
+    urgency?: "normal" | "fast";
+    autoSlippage?: boolean;
   }): Promise<{ quoteResponse: Record<string, unknown>; amountOut: string }> {
     const approval = this.lastApprovalContext;
     if (
@@ -101,15 +106,35 @@ export class RealTradingAdapter implements TradingAdapter {
       throw new Error("Uniswap flow violation: call checkApproval before quote for the same wallet/token/amount/chain");
     }
 
-    const response = await this.client.quote({
+    const quoteRequest: UniswapQuoteRequest = {
       tokenIn: input.tokenIn,
       tokenOut: input.tokenOut,
-      tokenInChainId: String(input.chainId),
-      tokenOutChainId: String(input.chainId),
+      tokenInChainId: input.chainId,
+      tokenOutChainId: input.chainId,
       type: "EXACT_INPUT",
       amount: input.amountIn,
-      swapper: input.swapper
-    });
+      swapper: input.swapper,
+      routingType: input.routingType as
+        | "CLASSIC"
+        | "DUTCH_LIMIT"
+        | "DUTCH_V2"
+        | "LIMIT_ORDER"
+        | "WRAP"
+        | "UNWRAP"
+        | "BRIDGE"
+        | "PRIORITY"
+        | "DUTCH_V3"
+        | "QUICKROUTE"
+        | "CHAINED"
+        | undefined,
+      slippageTolerance: input.slippageTolerance,
+      urgency: input.urgency,
+      autoSlippage: input.autoSlippage
+    };
+    const response =
+      input.intent === "order" || input.routingType === "LIMIT_ORDER"
+        ? await this.client.limitOrderQuote(quoteRequest)
+        : await this.client.quote(quoteRequest);
     if (response.requestId) {
       this.quotedRequestIds.add(response.requestId);
     }
@@ -143,5 +168,11 @@ export class RealTradingAdapter implements TradingAdapter {
       quoteRequestId,
       swapRequestId: swapResponse.requestId
     };
+  }
+
+  async supportedChains(): Promise<{
+    chains: Array<{ chainId: number; name?: string; supportsSwaps: boolean; supportsLp: boolean }>;
+  }> {
+    return this.client.supportedChains();
   }
 }

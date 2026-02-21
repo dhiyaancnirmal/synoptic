@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { ActivityRouteClient } from "@/components/dashboard/routes/ActivityRouteClient";
 
 export default function ActivityPage() {
-  redirect("/evidence");
+  return <ActivityRouteClient />;
 }

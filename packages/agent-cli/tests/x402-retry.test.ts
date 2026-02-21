@@ -77,7 +77,7 @@ describe("ApiClient x402 auto-retry", () => {
           pair: "ETH/USDT",
           price: 3000.42,
           timestamp: Date.now(),
-          source: "coingecko"
+          source: "local-static"
         }),
         { status: 200, headers: { "content-type": "application/json" } }
       );

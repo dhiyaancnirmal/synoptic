@@ -4,11 +4,18 @@ import { createServer } from "../server.js";
 
 const SECURITY_TOKEN = "qn-test-token-transform";
 
-test("POST /webhooks/quicknode/monad processes block and populates stream_blocks", async (t) => {
+const ERC20_INPUT_WITH_AMOUNT_100 =
+  "0xa9059cbb" +
+  "00000000000000000000000000000000000000000000000000000000000000aa" +
+  "0000000000000000000000000000000000000000000000000000000000000064";
+
+test("POST /webhooks/quicknode/monad processes block and emits enriched metrics", async (t) => {
   process.env.QUICKNODE_SECURITY_TOKEN = SECURITY_TOKEN;
+  process.env.FACILITATOR_MODE = "demo";
   const app = await createServer();
   t.after(async () => {
     delete process.env.QUICKNODE_SECURITY_TOKEN;
+    delete process.env.FACILITATOR_MODE;
     await app.close();
   });
 
@@ -27,7 +34,15 @@ test("POST /webhooks/quicknode/monad processes block and populates stream_blocks
           parentHash: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
           timestamp: "0x65a1b2c3",
           gasUsed: "0x5208",
-          transactionCount: 2
+          transactionCount: 2,
+          transactions: [
+            {
+              hash: "0xtx_selector_1",
+              from: "0x1111",
+              to: "0x2222",
+              input: "0x1234567800000000000000000000000000000000000000000000000000000000"
+            }
+          ]
         }
       ]
     }
@@ -38,13 +53,16 @@ test("POST /webhooks/quicknode/monad processes block and populates stream_blocks
   assert.equal(body.ok, true);
   assert.equal(body.blocksProcessed, 1);
   assert.equal(body.lastBlockNumber, 420);
+  assert.equal(body.selectorsExtracted, 1);
 });
 
-test("POST /webhooks/quicknode/monad extracts ERC-20 transfers from pre-filtered data", async (t) => {
+test("POST /webhooks/quicknode/monad extracts transfers from pre-filtered data with decoded amounts", async (t) => {
   process.env.QUICKNODE_SECURITY_TOKEN = SECURITY_TOKEN;
+  process.env.FACILITATOR_MODE = "demo";
   const app = await createServer();
   t.after(async () => {
     delete process.env.QUICKNODE_SECURITY_TOKEN;
+    delete process.env.FACILITATOR_MODE;
     await app.close();
   });
 
@@ -67,21 +85,7 @@ test("POST /webhooks/quicknode/monad extracts ERC-20 transfers from pre-filtered
               from: "0xsender",
               to: "0xreceiver",
               tokenContract: "0xtoken",
-              blockNumber: 500
-            },
-            {
-              txHash: "0xtransfer2",
-              from: "0xsender2",
-              to: "0xreceiver2",
-              tokenContract: "0xtoken2",
-              blockNumber: 500
-            }
-          ],
-          deployments: [
-            {
-              txHash: "0xdeploy1",
-              deployer: "0xdeployer",
-              contractAddress: "0xnewcontract",
+              input: ERC20_INPUT_WITH_AMOUNT_100,
               blockNumber: 500
             }
           ]
@@ -92,15 +96,26 @@ test("POST /webhooks/quicknode/monad extracts ERC-20 transfers from pre-filtered
 
   assert.equal(response.statusCode, 200);
   const body = response.json();
-  assert.equal(body.transfersExtracted, 2);
-  assert.equal(body.deploymentsDetected, 1);
+  assert.equal(body.transfersExtracted, 1);
+
+  const preview = await app.inject({
+    method: "GET",
+    url: "/marketplace/products/monad_orderflow_imbalance/preview?limit=1"
+  });
+  assert.equal(preview.statusCode, 200);
+  const previewBody = preview.json();
+  assert.ok(Array.isArray(previewBody.data));
+  assert.ok(previewBody.data.length > 0);
+  assert.equal(previewBody.data[0]?.inflow, 100);
 });
 
-test("POST /webhooks/quicknode/monad extracts transfers from raw transactions", async (t) => {
+test("POST /webhooks/quicknode/monad extracts selectors and deployments from raw transactions", async (t) => {
   process.env.QUICKNODE_SECURITY_TOKEN = SECURITY_TOKEN;
+  process.env.FACILITATOR_MODE = "demo";
   const app = await createServer();
   t.after(async () => {
     delete process.env.QUICKNODE_SECURITY_TOKEN;
+    delete process.env.FACILITATOR_MODE;
     await app.close();
   });
 
@@ -121,19 +136,20 @@ test("POST /webhooks/quicknode/monad extracts transfers from raw transactions", 
               hash: "0xtx_erc20",
               from: "0xsender",
               to: "0xtokencontract",
-              input: "0xa9059cbb000000000000000000000000receiver000000000000000000000000000000000064"
+              input: ERC20_INPUT_WITH_AMOUNT_100
             },
             {
               hash: "0xtx_deploy",
               from: "0xdeployer",
               to: null,
-              contractAddress: "0xnewly_deployed"
+              contractAddress: "0xnewly_deployed",
+              input: "0x60806040"
             },
             {
               hash: "0xtx_normal",
               from: "0xsender",
               to: "0xrecipient",
-              input: "0x12345678"
+              input: "0x1234567800000000"
             }
           ]
         }
@@ -145,17 +161,29 @@ test("POST /webhooks/quicknode/monad extracts transfers from raw transactions", 
   const body = response.json();
   assert.equal(body.transfersExtracted, 1);
   assert.equal(body.deploymentsDetected, 1);
+  assert.ok(body.selectorsExtracted >= 2);
+
+  const selectorPreview = await app.inject({
+    method: "GET",
+    url: "/marketplace/products/monad_selector_heatmap/preview?limit=5"
+  });
+  assert.equal(selectorPreview.statusCode, 200);
+  const selectorBody = selectorPreview.json();
+  assert.ok(Array.isArray(selectorBody.data));
+  assert.ok(selectorBody.data.some((entry: { selector?: string }) => entry.selector === "0xa9059cbb"));
 });
 
-test("POST /webhooks/quicknode/monad handles multiple blocks", async (t) => {
+test("POST /webhooks/quicknode/monad handles multiple blocks and empty payloads", async (t) => {
   process.env.QUICKNODE_SECURITY_TOKEN = SECURITY_TOKEN;
+  process.env.FACILITATOR_MODE = "demo";
   const app = await createServer();
   t.after(async () => {
     delete process.env.QUICKNODE_SECURITY_TOKEN;
+    delete process.env.FACILITATOR_MODE;
     await app.close();
   });
 
-  const response = await app.inject({
+  const multiResponse = await app.inject({
     method: "POST",
     url: "/webhooks/quicknode/monad",
     headers: {
@@ -171,21 +199,12 @@ test("POST /webhooks/quicknode/monad handles multiple blocks", async (t) => {
     }
   });
 
-  assert.equal(response.statusCode, 200);
-  const body = response.json();
-  assert.equal(body.blocksProcessed, 3);
-  assert.equal(body.lastBlockNumber, 702);
-});
+  assert.equal(multiResponse.statusCode, 200);
+  const multiBody = multiResponse.json();
+  assert.equal(multiBody.blocksProcessed, 3);
+  assert.equal(multiBody.lastBlockNumber, 702);
 
-test("POST /webhooks/quicknode/monad handles empty data gracefully", async (t) => {
-  process.env.QUICKNODE_SECURITY_TOKEN = SECURITY_TOKEN;
-  const app = await createServer();
-  t.after(async () => {
-    delete process.env.QUICKNODE_SECURITY_TOKEN;
-    await app.close();
-  });
-
-  const response = await app.inject({
+  const emptyResponse = await app.inject({
     method: "POST",
     url: "/webhooks/quicknode/monad",
     headers: {
@@ -195,8 +214,8 @@ test("POST /webhooks/quicknode/monad handles empty data gracefully", async (t) =
     payload: { data: [] }
   });
 
-  assert.equal(response.statusCode, 200);
-  const body = response.json();
-  assert.equal(body.ok, true);
-  assert.equal(body.blocksProcessed, 0);
+  assert.equal(emptyResponse.statusCode, 200);
+  const emptyBody = emptyResponse.json();
+  assert.equal(emptyBody.ok, true);
+  assert.equal(emptyBody.blocksProcessed, 0);
 });
