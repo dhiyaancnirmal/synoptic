@@ -13,7 +13,13 @@ export const WalletSchema = z.object({
     monad: z.object({
       chainId: z.number(),
       rpc: z.string().url()
-    })
+    }),
+    monadTestnet: z
+      .object({
+        chainId: z.number(),
+        rpc: z.string().url()
+      })
+      .optional()
   })
 });
 
@@ -26,9 +32,11 @@ export const ConfigSchema = z.object({
   backoffMs: z.number().int().positive().default(1000),
   apiUrl: z.string().url().default("https://agent-server-production-e47b.up.railway.app"),
   kiteRpcUrl: z.string().url().default("https://rpc-testnet.gokite.ai/"),
-  monadRpcUrl: z.string().url().default("https://testnet-rpc.monad.xyz"),
+  monadRpcUrl: z.string().url().default("https://rpc.monad.xyz"),
+  monadTestnetRpcUrl: z.string().url().optional(),
   kiteExplorerUrl: z.string().url().default("https://testnet.kitescan.ai"),
-  monadExplorerUrl: z.string().url().default("https://testnet.monadexplorer.com"),
+  monadExplorerUrl: z.string().url().default("https://monadexplorer.com"),
+  monadTestnetExplorerUrl: z.string().url().optional(),
   logLevel: z.enum(["debug", "info", "warn", "error"]).default("info")
 });
 

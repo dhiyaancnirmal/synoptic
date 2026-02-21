@@ -83,10 +83,26 @@ export interface SupportedChain {
   supportsLp: boolean;
 }
 
+export interface SimulationMetadata {
+  enabled: true;
+  reason: string;
+  chainId: number;
+  chainName?: string;
+}
+
 export interface SupportedChainsResponse {
   chains: SupportedChain[];
   monadSupportedForSwap: boolean;
   monadSupportedForLp: boolean;
+  executionChainId?: number;
+  executionChainSupportedForSwap?: boolean;
+  executionMode?: "auto" | "live" | "simulated";
+  effectiveModeByChain?: Record<string, "live" | "simulated">;
+  defaultTradePair?: {
+    tokenIn: string;
+    tokenOut: string;
+    intent: TradeIntent;
+  };
 }
 
 export interface TradeQuoteRequest {
@@ -110,10 +126,12 @@ export interface TradeQuoteResponse {
   routingType: TradeRoutingType;
   amountOut: string;
   quote: Record<string, unknown>;
+  simulation?: SimulationMetadata;
 }
 
 export interface TradeExecuteRequest {
   quoteResponse: Record<string, unknown>;
+  chainId?: number;
   tokenIn?: string;
   tokenOut?: string;
   amountIn?: string;
@@ -121,6 +139,17 @@ export interface TradeExecuteRequest {
   intent?: TradeIntent;
   routingType?: TradeRoutingType;
   agentId?: string;
+}
+
+export interface TradeExecuteResponse {
+  tradeId?: string;
+  txHash?: string;
+  attestationTxHash?: string;
+  status?: string;
+  quoteRequestId?: string;
+  swapRequestId?: string;
+  simulation?: SimulationMetadata;
+  [key: string]: unknown;
 }
 
 export interface LiquidityActionVm {
@@ -176,7 +205,7 @@ export interface ApiClient {
   listMarketplacePurchases: (token?: string) => Promise<MarketplacePurchase[]>;
   getTradeSupportedChains: (token?: string) => Promise<SupportedChainsResponse>;
   quoteTrade: (input: TradeQuoteRequest, token?: string) => Promise<TradeQuoteResponse>;
-  executeTrade: (input: TradeExecuteRequest, token?: string) => Promise<Record<string, unknown>>;
+  executeTrade: (input: TradeExecuteRequest, token?: string) => Promise<TradeExecuteResponse>;
   quoteLiquidity: (input: Record<string, unknown>, token?: string) => Promise<Record<string, unknown>>;
   runLiquidityAction: (
     action: "create" | "increase" | "decrease" | "collect",
@@ -760,8 +789,8 @@ export async function quoteTrade(input: TradeQuoteRequest, token?: string): Prom
 export async function executeTrade(
   input: TradeExecuteRequest,
   token?: string
-): Promise<Record<string, unknown>> {
-  return requestWithOptionalX402<Record<string, unknown>>(
+): Promise<TradeExecuteResponse> {
+  return requestWithOptionalX402<TradeExecuteResponse>(
     "/trade/execute",
     {
       method: "POST",

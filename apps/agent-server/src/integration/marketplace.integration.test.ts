@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createServer } from "../server.js";
+import { createTestAuthHeaders } from "./test-auth.js";
 
 const EXPECTED_SKUS = [
   "monad_lp_range_signal",
@@ -101,7 +102,7 @@ test("POST /marketplace/products/:sku/purchase without payment returns 402", asy
   const response = await app.inject({
     method: "POST",
     url: "/marketplace/products/monad_orderflow_imbalance/purchase",
-    headers: { "content-type": "application/json" },
+    headers: { ...createTestAuthHeaders(), "content-type": "application/json" },
     payload: {}
   });
 
@@ -125,7 +126,7 @@ test("POST /marketplace/products/:sku/purchase with x-payment completes purchase
   const challengeRes = await app.inject({
     method: "POST",
     url: "/marketplace/products/monad_selector_heatmap/purchase",
-    headers: { "content-type": "application/json" },
+    headers: { ...createTestAuthHeaders(), "content-type": "application/json" },
     payload: { limit: 5 }
   });
   assert.equal(challengeRes.statusCode, 402);
@@ -149,6 +150,7 @@ test("POST /marketplace/products/:sku/purchase with x-payment completes purchase
     method: "POST",
     url: "/marketplace/products/monad_selector_heatmap/purchase",
     headers: {
+      ...createTestAuthHeaders(),
       "content-type": "application/json",
       "x-payment": xPayment,
       "x-payment-request-id": challenge.paymentRequestId
@@ -162,6 +164,7 @@ test("POST /marketplace/products/:sku/purchase with x-payment completes purchase
   assert.equal(body.sku, "monad_selector_heatmap");
   assert.ok(body.paymentId);
   assert.ok(body.settlementTxHash);
+  assert.ok(body.attestationTxHash);
   assert.ok(body.resultHash);
   assert.ok(Array.isArray(body.data));
   assert.ok(body.timestamp);
@@ -180,7 +183,7 @@ test("POST /marketplace/products/:sku/purchase validates SKU params", async (t) 
   const response = await app.inject({
     method: "POST",
     url: "/marketplace/products/monad_lp_range_signal/purchase",
-    headers: { "content-type": "application/json" },
+    headers: { ...createTestAuthHeaders(), "content-type": "application/json" },
     payload: { risk: 2 }
   });
 
@@ -200,7 +203,7 @@ test("POST /marketplace/products/invalid_sku/purchase returns 404", async (t) =>
   const response = await app.inject({
     method: "POST",
     url: "/marketplace/products/nonexistent/purchase",
-    headers: { "content-type": "application/json" },
+    headers: { ...createTestAuthHeaders(), "content-type": "application/json" },
     payload: {}
   });
 

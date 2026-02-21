@@ -16,12 +16,23 @@
 | `KITE_TEST_USDT_ADDRESS` | No | `0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63` | Canonical asset |
 | `KITE_PAYMENT_ASSET_DECIMALS` | No | `18` | Atomic unit decimals |
 | `KITE_SERVICE_PAYTO` | No | `0x66ad7ef70cc88e37fa692d85c8a55ed4c1493251` | Unblock payee |
+| `X402_ORACLE_PRICE_USD` | No | `0.25` | Fixed price for `GET /oracle/price` |
+| `X402_TRADE_QUOTE_USD` | No | `0.25` | Fixed price for `POST /trade/quote` |
+| `X402_TRADE_EXECUTE_USD` | No | `0.35` | Fixed price for `POST /trade/execute` |
+| `X402_LIQUIDITY_ACTION_USD` | No | `0.30` | Fixed price for `POST /liquidity/create|increase|decrease|collect` |
 | `ALLOW_SERVER_SIGNING` | No | `false` | `/trade/execute` gate |
 | `DATABASE_URL` | Optional | - | Enables DB runtime store |
 | `AGENT_PRIVATE_KEY` | Optional | - | Needed for server-signing/attestation |
-| `EXECUTION_RPC_URL` | Optional | - | Needed for trade execution |
+| `EXECUTION_RPC_URL` | Optional | - | Needed for live trade execution (Monad `143`) |
+| `EXECUTION_CHAIN_ID` | No | `143` | Default live execution chain |
+| `EXECUTION_CHAIN_NAME` | No | `monad` | Chain label for activity + compat payloads |
+| `EXECUTION_EXPLORER_URL` | No | inferred from chain id | Explorer base URL |
+| `SWAP_EXECUTION_MODE` | No | `auto` | `auto`/`live`/`simulated` |
+| `SIMULATED_CHAIN_IDS` | No | `10143` | Comma-separated chain ids forced to simulation |
+| `SIMULATE_ONCHAIN` | Deprecated | `false` | Legacy alias; forces simulated mode when true |
 | `KITE_RPC_URL` | Optional | - | Needed for attestation |
 | `UNISWAP_API_KEY` | Optional | - | Needed for quote/execute adapters |
+| `UNISWAP_API_URL` | No | `https://trade-api.gateway.uniswap.org/v1` | Override Trading API host if needed |
 | `SERVICE_REGISTRY_ADDRESS` | Optional | - | Attestation adapter |
 
 ## Facilitator (self-hosted)

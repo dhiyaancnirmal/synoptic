@@ -4,7 +4,6 @@ import { initCommand } from "./commands/init.js";
 import { setupCommand } from "./commands/setup.js";
 import { fundCommand } from "./commands/fund.js";
 import { startCommand } from "./commands/start.js";
-import { setupCommand } from "./commands/setup.js";
 import { statusCommand } from "./commands/status.js";
 import { exportKeyCommand } from "./commands/export-key.js";
 import { deployKeyCommand } from "./commands/deploy-key.js";

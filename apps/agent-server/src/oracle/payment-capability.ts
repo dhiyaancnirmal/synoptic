@@ -52,24 +52,22 @@ export class PaymentCapabilityProbe {
       return this.cached;
     }
     const startedAt = Date.now();
-    let verifyReachable: PaymentCapabilityStatus["verifyReachable"] = "unknown";
-    let settleReachable: PaymentCapabilityStatus["settleReachable"] = "unknown";
-    let lastError: string | undefined;
-
-    try {
+    const verifyProbe = await this.probe(async () => {
       await this.adapter.verify(PROBE_TOKEN);
-      verifyReachable = "up";
-    } catch (error) {
-      verifyReachable = "down";
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-
-    try {
+    });
+    const settleProbe = await this.probe(async () => {
       await this.adapter.settle(PROBE_TOKEN);
-      settleReachable = "up";
-    } catch (error) {
-      settleReachable = "down";
-      lastError = error instanceof Error ? error.message : String(error);
+    });
+
+    const verifyReachable: PaymentCapabilityStatus["verifyReachable"] =
+      verifyProbe.ok ? "up" : "down";
+    const settleReachable: PaymentCapabilityStatus["settleReachable"] =
+      settleProbe.ok ? "up" : "down";
+    let lastError: string | undefined;
+    if (!verifyProbe.ok) {
+      lastError = verifyProbe.error;
+    } else if (!settleProbe.ok) {
+      lastError = settleProbe.error;
     }
 
     this.cached = {
@@ -84,5 +82,15 @@ export class PaymentCapabilityProbe {
     this.expiresAt = Date.now() + this.ttlMs;
     return this.cached;
   }
-}
 
+  private async probe(
+    fn: () => Promise<void>
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      await fn();
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+}

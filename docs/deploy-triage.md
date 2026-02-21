@@ -27,6 +27,7 @@ What it checks:
 
 - Root Directory must point to `apps/dashboard`.
 - `apps/dashboard/package.json` must include `next` in `dependencies` (already required).
+- Vercel project Node.js Version must be `22.x` to satisfy workspace engines (`>=22.22.0 <23`).
 - Build command should stay compatible with workspace `pnpm` install.
 
 Observed historical failure signature:
@@ -43,7 +44,9 @@ This almost always means Vercel resolved the wrong directory (repo root without 
   - `UNISWAP_API_KEY`
   - `AGENT_PRIVATE_KEY`
   - `EXECUTION_RPC_URL`
-  - `EXECUTION_CHAIN_ID` (Monad testnet default `10143`)
+  - `EXECUTION_CHAIN_ID` (Monad mainnet live default `143`)
+  - `SWAP_EXECUTION_MODE` (`auto` recommended)
+  - `SIMULATED_CHAIN_IDS` (include `10143` for Monad testnet simulation)
 
 ## 5. Fast Recovery Checklist
 

@@ -5,6 +5,7 @@ import { AddressInfo } from "node:net";
 import test from "node:test";
 import { keccak256 } from "ethers";
 import { createServer } from "../server.js";
+import { createTestAuthHeaders } from "./test-auth.js";
 
 interface RpcCall {
   id: number | string | null;
@@ -110,11 +111,12 @@ test("liquidity mutating endpoints return 402 without x-payment", async (t) => {
   });
 
   const endpoints = ["/liquidity/create", "/liquidity/increase", "/liquidity/decrease", "/liquidity/collect"] as const;
+  const authHeaders = createTestAuthHeaders();
   for (const endpoint of endpoints) {
     const response = await app.inject({
       method: "POST",
       url: endpoint,
-      headers: { "content-type": "application/json" },
+      headers: { ...authHeaders, "content-type": "application/json" },
       payload: {
         token0: "0x760afe86e5de5fa0ee542fc7b7b713e1c5425701",
         token1: "0x62534e4bbd6d9ebac0ac99aeaa0aa48e56372df0",
@@ -127,7 +129,7 @@ test("liquidity mutating endpoints return 402 without x-payment", async (t) => {
   }
 });
 
-test("POST /liquidity/create succeeds with demo x-payment and mocked Uniswap+RPC", async (t) => {
+test("POST /liquidity/create simulates on Monad testnet (10143) in auto mode", async (t) => {
   process.env.FACILITATOR_MODE = "demo";
   process.env.UNISWAP_API_KEY = "test-uniswap-key";
   process.env.AGENT_PRIVATE_KEY = "0x59c6995e998f97a5a0044966f0945382f4ff449bbf44e0f8c4f3fcbf7f0f6b0f";
@@ -183,7 +185,7 @@ test("POST /liquidity/create succeeds with demo x-payment and mocked Uniswap+RPC
   const challengeRes = await app.inject({
     method: "POST",
     url: "/liquidity/create",
-    headers: { "content-type": "application/json" },
+    headers: { ...createTestAuthHeaders(), "content-type": "application/json" },
     payload: {
       chainId: 10143,
       token0: "0x760afe86e5de5fa0ee542fc7b7b713e1c5425701",
@@ -218,6 +220,7 @@ test("POST /liquidity/create succeeds with demo x-payment and mocked Uniswap+RPC
     method: "POST",
     url: "/liquidity/create",
     headers: {
+      ...createTestAuthHeaders(),
       "content-type": "application/json",
       "x-payment": xPayment,
       "x-payment-request-id": challenge.paymentRequestId
@@ -239,7 +242,83 @@ test("POST /liquidity/create succeeds with demo x-payment and mocked Uniswap+RPC
   const body = successRes.json();
   assert.equal(body.status, "confirmed");
   assert.ok(body.txHash);
-  assert.equal(body.positionId, "123");
+  assert.ok(body.attestationTxHash);
+  assert.equal(typeof body.positionId, "string");
+  assert.equal(body.positionId.length, 16);
+  assert.equal(body.simulation?.enabled, true);
+  assert.equal(body.simulation?.chainId, 10143);
+});
+
+test("POST /liquidity/create fails when strict attestation is not configured in live mode", async (t) => {
+  process.env.FACILITATOR_MODE = "demo";
+  process.env.SWAP_EXECUTION_MODE = "live";
+  process.env.EXECUTION_CHAIN_ID = "143";
+  process.env.UNISWAP_API_KEY = "test-uniswap-key";
+  process.env.AGENT_PRIVATE_KEY = "0x59c6995e998f97a5a0044966f0945382f4ff449bbf44e0f8c4f3fcbf7f0f6b0f";
+  process.env.EXECUTION_RPC_URL = "http://127.0.0.1:8545";
+  delete process.env.KITE_RPC_URL;
+  delete process.env.SERVICE_REGISTRY_ADDRESS;
+
+  const app = await createServer();
+  t.after(async () => {
+    delete process.env.FACILITATOR_MODE;
+    delete process.env.SWAP_EXECUTION_MODE;
+    delete process.env.EXECUTION_CHAIN_ID;
+    delete process.env.UNISWAP_API_KEY;
+    delete process.env.AGENT_PRIVATE_KEY;
+    delete process.env.EXECUTION_RPC_URL;
+    await app.close();
+  });
+
+  const challengeRes = await app.inject({
+    method: "POST",
+    url: "/liquidity/create",
+    headers: { ...createTestAuthHeaders(), "content-type": "application/json" },
+    payload: {
+      chainId: 143,
+      token0: "0x760afe86e5de5fa0ee542fc7b7b713e1c5425701",
+      token1: "0x62534e4bbd6d9ebac0ac99aeaa0aa48e56372df0",
+      amount0: "1",
+      amount1: "1"
+    }
+  });
+  assert.equal(challengeRes.statusCode, 402);
+  const challenge = challengeRes.json();
+
+  const xPayment = JSON.stringify({
+    paymentPayload: {
+      scheme: challenge.scheme ?? "exact",
+      network: challenge.network ?? "eip155:2368",
+      authorization: {
+        payer: "0xTestPayer",
+        payee: challenge.payTo,
+        amount: challenge.maxAmountRequired
+      },
+      signature: "0xdemo_signature"
+    },
+    paymentRequirements: challenge
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/liquidity/create",
+    headers: {
+      ...createTestAuthHeaders(),
+      "content-type": "application/json",
+      "x-payment": xPayment,
+      "x-payment-request-id": challenge.paymentRequestId
+    },
+    payload: {
+      chainId: 143,
+      token0: "0x760afe86e5de5fa0ee542fc7b7b713e1c5425701",
+      token1: "0x62534e4bbd6d9ebac0ac99aeaa0aa48e56372df0",
+      amount0: "1",
+      amount1: "1"
+    }
+  });
+
+  assert.equal(response.statusCode, 503);
+  assert.equal(response.json().code, "ATTESTATION_NOT_CONFIGURED");
 });
 
 test("GET /trade/supported-chains reports Monad unsupported when missing", async (t) => {

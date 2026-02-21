@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -21,10 +20,20 @@ import {
 import { buildExplorerTxUrl } from "@/lib/api/explorer";
 import { RequireSession } from "@/components/dashboard/RequireSession";
 import { RouteShell } from "@/components/dashboard/RouteShell";
+import { MonadTopTokensPanel } from "@/components/dashboard/routes/MonadTopTokensPanel";
 import { useDashboardRuntime } from "@/lib/state/use-dashboard-runtime";
 import { computeLiquidityPreset } from "@/lib/liquidity/presets";
 
-const MONAD_CHAIN_ID = 10143;
+const MONAD_CHAIN_ID = 143;
+const MONAD_TESTNET_CHAIN_ID = 10143;
+const NATIVE_MON = "0x0000000000000000000000000000000000000000";
+const WMON_MONAD = "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A";
+const WMON_MONAD_TESTNET = "0x760AfE86e5de5fa0Ee542fc7B7B713e1c5425701";
+const USDC_MONAD = "0x62534e4BbD6d9EBAC0ac99aeAa0aa48e56372df0";
+const FALLBACK_SUPPORTED_CHAINS = [
+  { chainId: MONAD_CHAIN_ID, name: "monad", supportsSwaps: true, supportsLp: true },
+  { chainId: MONAD_TESTNET_CHAIN_ID, name: "monad-testnet", supportsSwaps: false, supportsLp: false }
+];
 
 const ROUTING_TYPES: TradeRoutingType[] = [
   "CLASSIC",
@@ -61,6 +70,40 @@ function formatBound(value: number): string {
   return `${percentage}%`;
 }
 
+function defaultPairForChain(chainId: number, supportedChains?: SupportedChainsResponse): {
+  tokenIn: string;
+  tokenOut: string;
+  intent: TradeIntent;
+} {
+  const apiDefault = supportedChains?.defaultTradePair;
+  if (chainId === MONAD_TESTNET_CHAIN_ID) {
+    return {
+      tokenIn: NATIVE_MON,
+      tokenOut: WMON_MONAD_TESTNET,
+      intent: "swap"
+    };
+  }
+  if (chainId === MONAD_CHAIN_ID) {
+    return {
+      tokenIn: NATIVE_MON,
+      tokenOut: WMON_MONAD,
+      intent: "swap"
+    };
+  }
+  if (apiDefault) {
+    return {
+      tokenIn: apiDefault.tokenIn,
+      tokenOut: apiDefault.tokenOut,
+      intent: apiDefault.intent
+    };
+  }
+  return {
+    tokenIn: NATIVE_MON,
+    tokenOut: WMON_MONAD,
+    intent: "swap"
+  };
+}
+
 export function TradingRouteClient() {
   const runtime = useDashboardRuntime();
   const searchParams = useSearchParams();
@@ -69,8 +112,8 @@ export function TradingRouteClient() {
   const [selectedChainId, setSelectedChainId] = useState(MONAD_CHAIN_ID);
   const [tradeIntent, setTradeIntent] = useState<TradeIntent>("swap");
   const [routingType, setRoutingType] = useState<TradeRoutingType>("CLASSIC");
-  const [tokenIn, setTokenIn] = useState("0x760AfE86e5de5fa0Ee542fc7B7B713e1c5425701");
-  const [tokenOut, setTokenOut] = useState("0x62534e4BbD6d9EBAC0ac99aeAa0aa48e56372df0");
+  const [tokenIn, setTokenIn] = useState(NATIVE_MON);
+  const [tokenOut, setTokenOut] = useState(WMON_MONAD);
   const [amountIn, setAmountIn] = useState("1");
   const [slippageTolerance, setSlippageTolerance] = useState("0.5");
   const [urgency, setUrgency] = useState<"normal" | "fast">("normal");
@@ -79,8 +122,8 @@ export function TradingRouteClient() {
   const [tradeBusy, setTradeBusy] = useState<"quote" | "execute" | null>(null);
   const [tradeMessage, setTradeMessage] = useState<string | null>(null);
 
-  const [lpToken0, setLpToken0] = useState("0x760AfE86e5de5fa0Ee542fc7B7B713e1c5425701");
-  const [lpToken1, setLpToken1] = useState("0x62534e4BbD6d9EBAC0ac99aeAa0aa48e56372df0");
+  const [lpToken0, setLpToken0] = useState(WMON_MONAD);
+  const [lpToken1, setLpToken1] = useState(USDC_MONAD);
   const [lpAmount0, setLpAmount0] = useState("1");
   const [lpAmount1, setLpAmount1] = useState("1");
   const [lpFeeTier, setLpFeeTier] = useState("3000");
@@ -106,6 +149,24 @@ export function TradingRouteClient() {
         ]);
         if (cancelled) return;
         setSupportedChains(chains);
+        const availableChains = chains.chains.length > 0 ? chains.chains : FALLBACK_SUPPORTED_CHAINS;
+        const defaultChainId =
+          chains.executionChainId ??
+          availableChains.find((chain) => chain.chainId === MONAD_CHAIN_ID)?.chainId ??
+          availableChains[0]?.chainId ??
+          MONAD_CHAIN_ID;
+        setSelectedChainId(defaultChainId);
+        const defaultPair = defaultPairForChain(defaultChainId, chains);
+        setTokenIn(defaultPair.tokenIn);
+        setTokenOut(defaultPair.tokenOut);
+        setTradeIntent(defaultPair.intent);
+        if (defaultChainId === MONAD_TESTNET_CHAIN_ID) {
+          setLpToken0(WMON_MONAD_TESTNET);
+          setLpToken1(USDC_MONAD);
+        } else {
+          setLpToken0(WMON_MONAD);
+          setLpToken1(USDC_MONAD);
+        }
         if (actions.length > 0) setLiquidityActions(actions);
       } catch (cause) {
         if (!cancelled) {
@@ -172,19 +233,19 @@ export function TradingRouteClient() {
     (selectedTradeId ? runtime.trades.find((trade) => trade.id === selectedTradeId) : undefined) ??
     runtime.trades[0];
 
-  const monadLpUnsupported = Boolean(
-    selectedChainId === MONAD_CHAIN_ID &&
-      supportedChains &&
-      supportedChains.monadSupportedForLp === false
-  );
+  const availableChains = supportedChains?.chains ?? FALLBACK_SUPPORTED_CHAINS;
+  const selectedChain = availableChains.find((chain) => chain.chainId === selectedChainId);
+  const selectedMode = supportedChains?.effectiveModeByChain?.[String(selectedChainId)] ?? "live";
+  const selectedChainSimulated = selectedMode === "simulated";
+  const lpUnsupportedInSelectedMode = selectedMode === "live" && Boolean(selectedChain && !selectedChain.supportsLp);
 
-  const fallbackLpChains = useMemo(
-    () =>
-      (supportedChains?.chains ?? []).filter(
-        (chain) => chain.supportsLp && chain.chainId !== MONAD_CHAIN_ID
-      ),
-    [supportedChains]
-  );
+  const fallbackLpChains = useMemo(() => {
+    return availableChains.filter((chain) => {
+      if (chain.chainId === selectedChainId) return false;
+      const chainMode = supportedChains?.effectiveModeByChain?.[String(chain.chainId)] ?? "live";
+      return chainMode === "simulated" || chain.supportsLp;
+    });
+  }, [availableChains, selectedChainId, supportedChains]);
 
   async function refreshLiquidityLedger(): Promise<void> {
     try {
@@ -214,7 +275,13 @@ export function TradingRouteClient() {
         runtime.token || undefined
       );
       setTradeQuoteResult(quote);
-      setTradeMessage(`Quoted ${quote.routing} (${quote.intent}) amountOut=${quote.amountOut}`);
+      if (quote.simulation?.enabled) {
+        setTradeMessage(
+          `Quoted ${quote.routing} (${quote.intent}) amountOut=${quote.amountOut} [simulated: ${quote.simulation.reason}]`
+        );
+      } else {
+        setTradeMessage(`Quoted ${quote.routing} (${quote.intent}) amountOut=${quote.amountOut}`);
+      }
     } catch (cause) {
       setTradeMessage(cause instanceof Error ? cause.message : "Quote failed");
     } finally {
@@ -230,9 +297,10 @@ export function TradingRouteClient() {
     setTradeBusy("execute");
     setTradeMessage(null);
     try {
-      await executeTrade(
+      const executeResult = await executeTrade(
         {
           quoteResponse: tradeQuoteResult.quote,
+          chainId: selectedChainId,
           tokenIn,
           tokenOut,
           amountIn,
@@ -241,7 +309,11 @@ export function TradingRouteClient() {
         },
         runtime.token || undefined
       );
-      setTradeMessage("Trade execution submitted and confirmed.");
+      if (executeResult.simulation?.enabled) {
+        setTradeMessage(`Trade simulated and marked confirmed (${executeResult.simulation.reason}).`);
+      } else {
+        setTradeMessage("Trade execution submitted and confirmed.");
+      }
       setTradeQuoteResult(null);
       await runtime.refresh();
     } catch (cause) {
@@ -285,8 +357,8 @@ export function TradingRouteClient() {
   }
 
   async function handleLiquidityMutate(action: "create" | "increase" | "decrease" | "collect"): Promise<void> {
-    if (monadLpUnsupported) {
-      setLpMessage("CHAIN_UNSUPPORTED_ON_MONAD");
+    if (lpUnsupportedInSelectedMode) {
+      setLpMessage(`Liquidity is unsupported for ${selectedChain?.name ?? selectedChainId} in live mode.`);
       return;
     }
 
@@ -329,23 +401,31 @@ export function TradingRouteClient() {
         connectionStatus={runtime.connectionStatus}
       >
         <article className="dash-panel">
-          <header className="dash-panel-head">
-            <h3>Capability Strip</h3>
-            <p className="pixel-text">Monad-first with explicit chain support checks</p>
-          </header>
-          <div className="dash-metric-strip">
-            <div>
-              <p className="pixel-text">swap/order</p>
-              <strong>{supportedChains?.monadSupportedForSwap ? "Monad enabled" : "check support"}</strong>
-            </div>
-            <div>
-              <p className="pixel-text">liquidity</p>
-              <strong>{supportedChains?.monadSupportedForLp ? "Monad enabled" : "Monad may be unsupported"}</strong>
-            </div>
-            <div>
-              <p className="pixel-text">confirmed trades</p>
-              <strong>{confirmedTrades.length}</strong>
-            </div>
+            <header className="dash-panel-head">
+              <h3>Capability Strip</h3>
+              <p className="pixel-text">Dual-mode execution with explicit live/simulated chain routing</p>
+            </header>
+            <div className="dash-metric-strip">
+              <div>
+                <p className="pixel-text">execution mode</p>
+                <strong>{supportedChains?.executionMode ?? "auto"}</strong>
+              </div>
+              <div>
+                <p className="pixel-text">selected chain mode</p>
+                <strong>{selectedMode}</strong>
+              </div>
+              <div>
+                <p className="pixel-text">swap/order</p>
+                <strong>{selectedChain?.supportsSwaps ? "enabled" : "check support"}</strong>
+              </div>
+              <div>
+                <p className="pixel-text">liquidity</p>
+                <strong>{selectedMode === "simulated" ? "simulated" : selectedChain?.supportsLp ? "enabled" : "unsupported"}</strong>
+              </div>
+              <div>
+                <p className="pixel-text">confirmed trades</p>
+                <strong>{confirmedTrades.length}</strong>
+              </div>
             <div>
               <p className="pixel-text">flow bias</p>
               <strong>{flowBias.toFixed(3)}</strong>
@@ -356,6 +436,8 @@ export function TradingRouteClient() {
             </div>
           </div>
         </article>
+
+        <MonadTopTokensPanel />
 
         <div className="dash-two-pane">
           <article className="dash-panel">
@@ -389,9 +471,23 @@ export function TradingRouteClient() {
                 <span className="pixel-text">Chain</span>
                 <select
                   value={String(selectedChainId)}
-                  onChange={(event) => setSelectedChainId(Number(event.target.value))}
+                  onChange={(event) => {
+                    const nextChainId = Number(event.target.value);
+                    setSelectedChainId(nextChainId);
+                    const nextPair = defaultPairForChain(nextChainId, supportedChains);
+                    setTokenIn(nextPair.tokenIn);
+                    setTokenOut(nextPair.tokenOut);
+                    setTradeIntent(nextPair.intent);
+                    if (nextChainId === MONAD_TESTNET_CHAIN_ID) {
+                      setLpToken0(WMON_MONAD_TESTNET);
+                      setLpToken1(USDC_MONAD);
+                    } else if (nextChainId === MONAD_CHAIN_ID) {
+                      setLpToken0(WMON_MONAD);
+                      setLpToken1(USDC_MONAD);
+                    }
+                  }}
                 >
-                  {(supportedChains?.chains ?? [{ chainId: MONAD_CHAIN_ID, name: "monad-testnet", supportsSwaps: true, supportsLp: true }]).map((chain) => (
+                  {availableChains.map((chain) => (
                     <option key={chain.chainId} value={chain.chainId}>
                       {chain.name ?? `chain-${chain.chainId}`} ({chain.chainId})
                     </option>
@@ -447,6 +543,11 @@ export function TradingRouteClient() {
                 {tradeBusy === "execute" ? "Executing..." : "Execute"}
               </button>
             </div>
+            {selectedChainSimulated ? (
+              <p className="dash-empty-inline">
+                Simulated execution active for chain {selectedChainId}. Quotes and executes are mocked.
+              </p>
+            ) : null}
             {tradeMessage ? <p className="dash-empty-inline">{tradeMessage}</p> : null}
 
             {tradeQuoteResult ? (
@@ -566,7 +667,7 @@ export function TradingRouteClient() {
                       : "N/A"}
                   </span>
                   <span>
-                    <Link href={`/activity?tradeId=${encodeURIComponent(trade.id)}`}>activity</Link>
+                    {trade.id.slice(0, 8)}
                   </span>
                 </div>
               ))}
@@ -579,9 +680,9 @@ export function TradingRouteClient() {
               <p className="pixel-text">preset-driven bands with quote/create/increase/decrease/collect</p>
             </header>
 
-            {monadLpUnsupported ? (
+            {lpUnsupportedInSelectedMode ? (
               <p className="dash-empty-inline">
-                CHAIN_UNSUPPORTED_ON_MONAD
+                Liquidity actions are unsupported on {selectedChain?.name ?? selectedChainId} in live mode.
                 {fallbackLpChains.length > 0 ? (
                   <>
                     {" "}
@@ -593,6 +694,11 @@ export function TradingRouteClient() {
                     </button>
                   </>
                 ) : null}
+              </p>
+            ) : null}
+            {selectedChainSimulated ? (
+              <p className="dash-empty-inline">
+                Simulated liquidity mode active for chain {selectedChainId}. Actions are synthetic and deterministic.
               </p>
             ) : null}
 
@@ -660,35 +766,35 @@ export function TradingRouteClient() {
               <button
                 className="dash-btn"
                 onClick={() => void handleLiquidityQuote()}
-                disabled={lpBusyAction !== null || monadLpUnsupported}
+                disabled={lpBusyAction !== null || lpUnsupportedInSelectedMode}
               >
                 {lpBusyAction === "quote" ? "Quoting..." : "Quote"}
               </button>
               <button
                 className="dash-btn"
                 onClick={() => void handleLiquidityMutate("create")}
-                disabled={lpBusyAction !== null || monadLpUnsupported}
+                disabled={lpBusyAction !== null || lpUnsupportedInSelectedMode}
               >
                 {lpBusyAction === "create" ? "Creating..." : "Create"}
               </button>
               <button
                 className="dash-btn"
                 onClick={() => void handleLiquidityMutate("increase")}
-                disabled={lpBusyAction !== null || monadLpUnsupported}
+                disabled={lpBusyAction !== null || lpUnsupportedInSelectedMode}
               >
                 {lpBusyAction === "increase" ? "Increasing..." : "Increase"}
               </button>
               <button
                 className="dash-btn"
                 onClick={() => void handleLiquidityMutate("decrease")}
-                disabled={lpBusyAction !== null || monadLpUnsupported}
+                disabled={lpBusyAction !== null || lpUnsupportedInSelectedMode}
               >
                 {lpBusyAction === "decrease" ? "Decreasing..." : "Decrease"}
               </button>
               <button
                 className="dash-btn"
                 onClick={() => void handleLiquidityMutate("collect")}
-                disabled={lpBusyAction !== null || monadLpUnsupported}
+                disabled={lpBusyAction !== null || lpUnsupportedInSelectedMode}
               >
                 {lpBusyAction === "collect" ? "Collecting..." : "Collect"}
               </button>
@@ -739,7 +845,6 @@ export function TradingRouteClient() {
                     {action.txHash
                       ? (() => {
                           const txUrl = buildExplorerTxUrl({
-                            chain: "monad-testnet",
                             txHash: action.txHash,
                             chainId: action.chainId
                           });

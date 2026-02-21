@@ -48,6 +48,35 @@ export class RealAttestationAdapter implements AttestationAdapter {
     this.registryAddress = resolvedAddress;
   }
 
+  async recordService(input: {
+    serviceType: string;
+    sourceChainId: number;
+    sourceTxHashOrRef: string;
+    tokenIn: string;
+    tokenOut: string;
+    amountIn: string;
+    amountOut: string;
+    metadata: string;
+  }): Promise<{ attestationTxHash: string }> {
+    const signer = this.wallet.connect(this.provider);
+    const serviceRegistry = new Contract(this.registryAddress, SERVICE_REGISTRY_ABI, signer);
+    const tx = await serviceRegistry.recordService({
+      serviceType: input.serviceType,
+      paymentAmount: 0n,
+      paymentTxHash: ZERO_BYTES32,
+      targetChainId: BigInt(input.sourceChainId),
+      targetTxHashOrRef: input.sourceTxHashOrRef,
+      tokenIn: normalizeAddress(input.tokenIn),
+      tokenOut: normalizeAddress(input.tokenOut),
+      amountIn: BigInt(input.amountIn),
+      amountOut: BigInt(input.amountOut),
+      metadata: input.metadata
+    });
+
+    await tx.wait(1);
+    return { attestationTxHash: tx.hash as string };
+  }
+
   async recordTrade(input: {
     sourceChainId: number;
     sourceTxHash: string;
@@ -57,26 +86,19 @@ export class RealAttestationAdapter implements AttestationAdapter {
     amountOut: string;
     strategyReason: string;
   }): Promise<{ attestationTxHash: string }> {
-    const signer = this.wallet.connect(this.provider);
-    const serviceRegistry = new Contract(this.registryAddress, SERVICE_REGISTRY_ABI, signer);
-
     try {
-      const tx = await serviceRegistry.recordService({
+      return await this.recordService({
         serviceType: "trade_execute",
-        paymentAmount: 0n,
-        paymentTxHash: ZERO_BYTES32,
-        targetChainId: BigInt(input.sourceChainId),
-        targetTxHashOrRef: input.sourceTxHash,
-        tokenIn: normalizeAddress(input.tokenIn),
-        tokenOut: normalizeAddress(input.tokenOut),
-        amountIn: BigInt(input.amountIn),
-        amountOut: BigInt(input.amountOut),
+        sourceChainId: input.sourceChainId,
+        sourceTxHashOrRef: input.sourceTxHash,
+        tokenIn: input.tokenIn,
+        tokenOut: input.tokenOut,
+        amountIn: input.amountIn,
+        amountOut: input.amountOut,
         metadata: input.strategyReason
       });
-
-      await tx.wait(1);
-      return { attestationTxHash: tx.hash as string };
     } catch {
+      const signer = this.wallet.connect(this.provider);
       const legacyTradeRegistry = new Contract(this.registryAddress, LEGACY_TRADE_REGISTRY_ABI, signer);
       const tx = await legacyTradeRegistry.recordTrade(
       BigInt(input.sourceChainId),

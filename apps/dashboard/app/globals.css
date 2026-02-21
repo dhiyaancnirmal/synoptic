@@ -1599,6 +1599,42 @@ body {
   font-size: 0.82rem;
 }
 
+.dash-token-grid {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dash-token-card {
+  border: 1px solid color-mix(in oklab, var(--dust-grey) 20%, transparent);
+  background: color-mix(in oklab, var(--carbon-black) 82%, var(--charcoal-brown));
+  padding: 0.8rem;
+}
+
+.dash-token-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.dash-token-head p {
+  margin: 0;
+}
+
+.dash-token-subhead {
+  margin-top: 0.3rem;
+  color: var(--dust-grey);
+  font-size: 0.74rem;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+.dash-token-chart {
+  margin-top: 0.5rem;
+  height: 120px;
+}
+
 @media (max-width: 980px) {
   .flow-grid {
     grid-template-columns: 1fr;
@@ -1611,6 +1647,10 @@ body {
   .top-meta {
     align-items: flex-start;
     margin-top: 0;
+  }
+
+  .dash-token-grid {
+    grid-template-columns: 1fr;
   }
 
   .top-row {

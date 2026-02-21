@@ -237,6 +237,7 @@ function readString(source: Record<string, unknown>, keys: string[]): string | u
 
 function chainFromId(chainId?: number): ActivityChain | undefined {
   if (chainId === 2368) return "kite-testnet";
+  if (chainId === 143) return "monad";
   if (chainId === 10143) return "monad-testnet";
   return undefined;
 }
@@ -245,6 +246,6 @@ function normalizeChain(chain?: string): ActivityChain {
   const normalized = chain?.toLowerCase();
   if (!normalized) return "kite-testnet";
   if (normalized === "kite") return "kite-testnet";
-  if (normalized === "monad") return "monad-testnet";
+  if (normalized === "monad" || normalized === "monad-testnet") return normalized;
   return normalized as ActivityChain;
 }

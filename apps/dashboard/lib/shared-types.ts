@@ -1,6 +1,6 @@
 export type AgentRole = "oracle" | "strategy" | "executor";
 export type AgentStatus = "idle" | "running" | "paused" | "error";
-export type ActivityChain = "kite-testnet" | "monad-testnet" | (string & {});
+export type ActivityChain = "kite-testnet" | "monad" | "monad-testnet" | (string & {});
 
 export interface Agent {
   id: string;

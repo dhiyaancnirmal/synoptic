@@ -22,6 +22,10 @@ Minimum agent-server env for Phase 1:
 - `AUTH_TOKEN_SECRET`
 - `KITE_PAYMENT_MODE` (`facilitator` or `demo`)
 - `KITE_FACILITATOR_URL` (required when mode is `facilitator`)
+- `X402_ORACLE_PRICE_USD` (optional fixed price override)
+- `X402_TRADE_QUOTE_USD` (optional fixed price override)
+- `X402_TRADE_EXECUTE_USD` (optional fixed price override)
+- `X402_LIQUIDITY_ACTION_USD` (optional fixed price override)
 
 ## 3) Start server
 
@@ -87,6 +91,8 @@ Or raw API:
    - `x-payment`
    - `x-payment-request-id`
    - `Authorization: Bearer <accessToken>`
+
+Paid mutation routes (`/trade/quote`, `/trade/execute`, `/liquidity/*`, `/marketplace/*/purchase`) require both bearer auth and x402.
 
 ## 7) Canonical tuple and asset
 

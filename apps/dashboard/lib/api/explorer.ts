@@ -2,26 +2,31 @@
  * Explorer chain resolution. Defaults: Kite + Monad.
  * `sepolia` is retained as a deprecated compatibility shim for legacy payloads/links.
  */
-export type ExplorerChain = "kite-testnet" | "monad-testnet" | "sepolia" | (string & {});
+export type ExplorerChain = "kite-testnet" | "monad" | "monad-testnet" | "sepolia" | (string & {});
 
 function normalizeChain(value?: string): ExplorerChain | undefined {
   if (!value) return undefined;
   const normalized = value.toLowerCase();
   if (normalized === "kite" || normalized === "kite-testnet") return "kite-testnet";
-  if (normalized === "monad" || normalized === "monad-testnet") return "monad-testnet";
+  if (normalized === "monad") return "monad";
+  if (normalized === "monad-testnet") return "monad-testnet";
   if (normalized === "sepolia") return "sepolia";
   return normalized as ExplorerChain;
 }
 
 function explorerBaseUrl(chain: ExplorerChain): string {
   if (chain === "kite-testnet") return process.env.NEXT_PUBLIC_KITE_EXPLORER_URL ?? "";
-  if (chain === "monad-testnet") return process.env.NEXT_PUBLIC_MONAD_EXPLORER_URL ?? "";
+  if (chain === "monad") return process.env.NEXT_PUBLIC_MONAD_EXPLORER_URL ?? "https://monadexplorer.com";
+  if (chain === "monad-testnet") {
+    return process.env.NEXT_PUBLIC_MONAD_TESTNET_EXPLORER_URL ?? "https://testnet.monadexplorer.com";
+  }
   if (chain === "sepolia") return process.env.NEXT_PUBLIC_SEPOLIA_EXPLORER_URL ?? "";
   return process.env.NEXT_PUBLIC_EXPLORER_URL ?? "";
 }
 
 function chainFromId(chainId?: number): ExplorerChain | undefined {
   if (chainId === 2368) return "kite-testnet";
+  if (chainId === 143) return "monad";
   if (chainId === 10143) return "monad-testnet";
   return undefined;
 }

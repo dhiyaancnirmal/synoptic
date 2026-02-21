@@ -74,3 +74,28 @@ Harness outputs:
 - Keep one submission path aligned to the three canonical bounty files.
 - Use QuickNode Streams (Monad) as primary data source for streamed blockchain insights.
 - Keep x402 payment mapping explicit for every paid action.
+
+## Paid Route Security Model
+
+- Paid execution routes require both:
+  - `Authorization: Bearer <accessToken>`
+  - x402 settlement headers (`x-payment` + `x-payment-request-id`)
+- Public read routes:
+  - `/health`
+  - `/trade/supported-chains`
+  - `/liquidity/quote`
+  - `/marketplace/catalog`
+  - `/marketplace/products/:sku/preview`
+- All paid actions are priced server-side via fixed env values:
+  - `X402_ORACLE_PRICE_USD`
+  - `X402_TRADE_QUOTE_USD`
+  - `X402_TRADE_EXECUTE_USD`
+  - `X402_LIQUIDITY_ACTION_USD`
+
+## Swap/Liquidity Execution Modes
+
+- Live execution chain: Monad mainnet (`143`).
+- Simulated execution chain: Monad testnet (`10143`).
+- Default mode: `SWAP_EXECUTION_MODE=auto` (live for supported chains, simulated fallback for unsupported chains).
+- Trading API host default: `https://trade-api.gateway.uniswap.org/v1`.
+- UI defaults use MON native `<->` WMON wrap/unwrap pair.

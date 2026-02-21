@@ -7,6 +7,7 @@ import type {
   Payment,
   Trade
 } from "@synoptic/types";
+import { getExecutionChainProfile } from "@synoptic/agent-core";
 
 export type CompatAgentStatus = "ACTIVE" | "PAUSED" | "STOPPED";
 export type CompatOrderStatus = "PENDING" | "EXECUTED" | "REJECTED";
@@ -43,7 +44,7 @@ export interface StreamBlockRecord {
   receivedAt: string;
 }
 
-export interface LiquidityActionRecord extends LiquidityAction {}
+export type LiquidityActionRecord = LiquidityAction;
 
 export interface RuntimeStoreContract {
   listAgents(): Promise<Agent[]>;
@@ -226,7 +227,14 @@ export interface RuntimeStoreContract {
   compatAgent(id: string): Promise<{ agentId: string; ownerAddress: string; status: CompatAgentStatus; createdAt: string } | undefined>;
   compatEvents(agentId: string): Promise<CompatEvent[]>;
   compatOrder(id: string): Promise<CompatOrder | undefined>;
-  createCompatOrder(input: { agentId: string; side: "BUY" | "SELL"; size: string; marketId: string }): Promise<CompatOrder>;
+  createCompatOrder(input: {
+    agentId: string;
+    side: "BUY" | "SELL";
+    size: string;
+    marketId: string;
+    chainId?: number;
+    chain?: ActivityEvent["chain"];
+  }): Promise<CompatOrder>;
 }
 
 export class RuntimeStore implements RuntimeStoreContract {
@@ -675,6 +683,8 @@ export class RuntimeStore implements RuntimeStoreContract {
     side: "BUY" | "SELL";
     size: string;
     marketId: string;
+    chainId?: number;
+    chain?: ActivityEvent["chain"];
   }): Promise<CompatOrder> {
     const now = new Date().toISOString();
     const order: CompatOrder = {
@@ -689,7 +699,9 @@ export class RuntimeStore implements RuntimeStoreContract {
       updatedAt: now
     };
     this.orders.set(order.orderId, order);
-    await this.addActivity(input.agentId, "trade.executed", "monad-testnet", { orderId: order.orderId });
+    const chainId = input.chainId ?? 143;
+    const chain = input.chain ?? getExecutionChainProfile(chainId).name;
+    await this.addActivity(input.agentId, "trade.executed", chain, { orderId: order.orderId });
     return order;
   }
 

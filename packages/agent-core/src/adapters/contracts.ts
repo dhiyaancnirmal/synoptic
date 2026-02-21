@@ -40,6 +40,16 @@ export interface TradingAdapter {
 }
 
 export interface AttestationAdapter {
+  recordService?(input: {
+    serviceType: string;
+    sourceChainId: number;
+    sourceTxHashOrRef: string;
+    tokenIn: string;
+    tokenOut: string;
+    amountIn: string;
+    amountOut: string;
+    metadata: string;
+  }): Promise<{ attestationTxHash: string }>;
   recordTrade(input: {
     sourceChainId: number;
     sourceTxHash: string;

@@ -117,13 +117,7 @@ describe("setup + paid request smoke", () => {
       async getPayerAddr() {
         return "0x0000000000000000000000000000000000000002";
       },
-      async approvePayment(_params: {
-        payerAddr: string;
-        payeeAddr: string;
-        amount: string;
-        tokenType: string;
-        merchantName?: string;
-      }) {
+      async approvePayment() {
         return {
           paymentToken: JSON.stringify({
             scheme: "gokite-aa",

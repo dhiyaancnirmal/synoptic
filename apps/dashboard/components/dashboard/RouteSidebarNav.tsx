@@ -8,9 +8,7 @@ const links = [
   { href: "/agents", label: "Agents" },
   { href: "/trading", label: "Trading" },
   { href: "/payments", label: "Payments" },
-  { href: "/streams", label: "Streams" },
-  { href: "/marketplace", label: "Marketplace" },
-  { href: "/activity", label: "Activity" }
+  { href: "/marketplace", label: "Marketplace" }
 ];
 
 interface RouteSidebarNavProps {

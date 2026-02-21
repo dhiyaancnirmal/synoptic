@@ -104,6 +104,7 @@ export async function registerIdentityRoutes(
       identity: {
         ownerAddress: normalizedOwner,
         payerAddress: normalizedPayer,
+        linkedPayerAddress: normalizedPayer,
         linkedAt: existingIdentity.linkedAt ?? now,
         updatedAt: now
       }
@@ -142,10 +143,23 @@ export async function registerIdentityRoutes(
     }
 
     const identity = readIdentityState(agent.strategyConfig);
+    const configuredOwner = agent.eoaAddress ? normalizeAddress(agent.eoaAddress) : "";
+    const normalizedSessionOwner = normalizeAddress(claims.ownerAddress);
+    if (
+      configuredOwner &&
+      !isPlaceholderOwner(configuredOwner) &&
+      configuredOwner !== normalizedSessionOwner
+    ) {
+      return reply.status(403).send({
+        code: "OWNER_MISMATCH",
+        message: "Session owner does not match agent owner",
+        requestId: request.id
+      });
+    }
 
     return {
       agentId: agent.id,
-      ownerAddress: claims.ownerAddress,
+      ownerAddress: normalizedSessionOwner,
       payerAddress: identity.payerAddress,
       linked: Boolean(identity.ownerAddress && identity.payerAddress),
       linkedAt: identity.linkedAt,

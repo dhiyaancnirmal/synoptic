@@ -22,7 +22,8 @@ export async function registerCompatRoutes(
     return new RealTradingAdapter({
       privateKey: env.agentPrivateKey,
       executionRpcUrl: env.executionRpcUrl,
-      uniswapApiKey: env.uniswapApiKey
+      uniswapApiKey: env.uniswapApiKey,
+      uniswapApiUrl: env.uniswapApiUrl || undefined
     });
   }
 
@@ -221,7 +222,14 @@ export async function registerCompatRoutes(
       swapper: agent.eoaAddress
     });
     const swap = await tradingAdapter.executeSwap({ quoteResponse: quote.quoteResponse });
-    const order = await store.createCompatOrder({ agentId, side, size, marketId });
+    const order = await store.createCompatOrder({
+      agentId,
+      side,
+      size,
+      marketId,
+      chainId: env.executionChainId,
+      chain: env.executionChainName
+    });
     const event = await store.addActivity(agentId, "trade.executed", env.executionChainName, {
       orderId: order.orderId,
       approvalRequestId: approval.approvalRequestId ?? "",
@@ -351,7 +359,7 @@ export async function registerCompatRoutes(
       return;
     }
 
-    const pair = sessionAuth.issueTokenPair({
+    const pair = sessionAuth.issueSessionPair({
       ownerAddress: challenge.ownerAddress,
       agentId: challenge.agentId,
       accessTtlSeconds: env.authSessionTtlSeconds,

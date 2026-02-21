@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Wallet } from "ethers";
 import { createServer } from "../server.js";
+import { createTestAuthHeaders } from "./test-auth.js";
 
 async function authenticateAndLink(app: Awaited<ReturnType<typeof createServer>>) {
   const owner = Wallet.createRandom();

@@ -54,3 +54,19 @@ test("legacy trade payload keys still map to execution fields", () => {
 
   assert.equal(trade.executionTxHash, "0xlegacy");
 });
+
+test("mainnet Monad chainId maps to monad label", () => {
+  const trade = mapTrade({
+    id: "mainnet-1",
+    agentId: "agent-1",
+    status: "confirmed",
+    tokenIn: "MON",
+    tokenOut: "WMON",
+    amountIn: "1",
+    amountOut: "1",
+    chainId: 143,
+    createdAt: "2026-02-20T00:00:00.000Z"
+  });
+
+  assert.equal(trade.executionChain, "monad");
+});

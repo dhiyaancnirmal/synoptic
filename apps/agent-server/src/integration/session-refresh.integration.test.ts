@@ -3,7 +3,12 @@ import test from "node:test";
 import { Wallet } from "ethers";
 import { createServer } from "../server.js";
 
-async function authenticate(app: Awaited<ReturnType<typeof createServer>>, owner: Wallet) {
+interface MessageSigner {
+  address: string;
+  signMessage(message: string): Promise<string>;
+}
+
+async function authenticate(app: Awaited<ReturnType<typeof createServer>>, owner: MessageSigner) {
   const challenge = await app.inject({
     method: "POST",
     url: "/api/auth/wallet/challenge",

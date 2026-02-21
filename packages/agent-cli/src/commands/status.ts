@@ -48,9 +48,20 @@ export async function statusCommand(): Promise<void> {
   try {
     const monadProvider = new JsonRpcProvider(wallet.chains.monad.rpc);
     const monadBalance = await monadProvider.getBalance(wallet.address);
-    monadSpinner.succeed(`  Monad:  ${chalk.cyan(formatEther(monadBalance))} MON`);
+    monadSpinner.succeed(`  Monad (mainnet):  ${chalk.cyan(formatEther(monadBalance))} MON`);
   } catch {
-    monadSpinner.fail("  Monad:  Unable to fetch");
+    monadSpinner.fail("  Monad (mainnet):  Unable to fetch");
+  }
+
+  if (wallet.chains.monadTestnet) {
+    const monadTestnetSpinner = ora("Checking Monad testnet balance...").start();
+    try {
+      const monadProvider = new JsonRpcProvider(wallet.chains.monadTestnet.rpc);
+      const monadBalance = await monadProvider.getBalance(wallet.address);
+      monadTestnetSpinner.succeed(`  Monad (testnet):  ${chalk.cyan(formatEther(monadBalance))} MON`);
+    } catch {
+      monadTestnetSpinner.fail("  Monad (testnet):  Unable to fetch");
+    }
   }
 
   console.log("");

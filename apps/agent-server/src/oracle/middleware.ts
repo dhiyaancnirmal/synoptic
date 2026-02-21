@@ -18,6 +18,7 @@ interface OraclePaymentDeps {
   paymentAssetDecimals: number;
   budgetResetTimeZone: string;
   enforceLocalBudget: boolean;
+  fixedCostUsd?: number;
   onPayment?: (payment: Payment) => void;
   onActivity?: (event: ActivityEvent) => void;
 }
@@ -462,8 +463,7 @@ export async function requireX402PaymentForResource(
   const paymentUsd = resource.costUsd ?? parsePaymentUsd(request);
   const paymentAmountAtomic = toAtomicAmount(paymentUsd, deps.paymentAssetDecimals);
   const pair = ((request.query as { pair?: string } | undefined)?.pair ?? "").toUpperCase() || resource.resourcePath;
-  const authClaims =
-    (request as { sessionClaims?: { ownerAddress?: string; agentId?: string } }).sessionClaims;
+  const authClaims = request.authClaims ?? request.sessionClaims;
   const currentAgent = await deps.store.getAgent(agentId);
   if (!currentAgent) {
     reply.status(404).send({ code: "AGENT_NOT_FOUND", message: "Agent not found" });
@@ -497,7 +497,7 @@ export async function requireX402PaymentForResource(
         typeof currentAgent.strategyConfig.identity === "object"
           ? (currentAgent.strategyConfig.identity as Record<string, unknown>)
           : undefined;
-      const candidate = identity?.linkedPayerAddress;
+      const candidate = identity?.payerAddress ?? identity?.linkedPayerAddress;
       return typeof candidate === "string" ? candidate.toLowerCase() : undefined;
     })();
     const payer = extractPayerAddress(payment);
@@ -526,7 +526,7 @@ export async function requireX402PaymentForResource(
     const x402Version = facilitatorVersionForNetwork(network);
     const challenge = {
       x402Version,
-      scheme: "gokite-aa",
+      scheme,
       network: deps.network,
       asset: deps.paymentAssetAddress,
       payTo: deps.payToAddress,
@@ -534,7 +534,7 @@ export async function requireX402PaymentForResource(
       maxTimeoutSeconds: 120,
       accepts: [
         {
-          scheme: "gokite-aa",
+          scheme,
           network: deps.network,
           maxAmountRequired: paymentAmountAtomic,
           resource: resource.resourcePath,
@@ -726,11 +726,10 @@ export async function requireX402Payment(
     return false;
   }
 
-  const paymentUsd = parsePaymentUsd(request);
+  const paymentUsd = deps.fixedCostUsd ?? parsePaymentUsd(request);
   const paymentAmountAtomic = toAtomicAmount(paymentUsd, deps.paymentAssetDecimals);
   const pair = ((request.query as { pair?: string } | undefined)?.pair ?? "ETH/USDT").toUpperCase();
-  const authClaims =
-    (request as { sessionClaims?: { ownerAddress?: string; agentId?: string } }).sessionClaims;
+  const authClaims = request.authClaims ?? request.sessionClaims;
   const currentAgent = await deps.store.getAgent(agentId);
   if (!currentAgent) {
     reply.status(404).send({ code: "AGENT_NOT_FOUND", message: "Agent not found" });
@@ -764,7 +763,7 @@ export async function requireX402Payment(
         typeof currentAgent.strategyConfig.identity === "object"
           ? (currentAgent.strategyConfig.identity as Record<string, unknown>)
           : undefined;
-      const candidate = identity?.linkedPayerAddress;
+      const candidate = identity?.payerAddress ?? identity?.linkedPayerAddress;
       return typeof candidate === "string" ? candidate.toLowerCase() : undefined;
     })();
     const payer = extractPayerAddress(payment);

@@ -49,10 +49,15 @@ export class RealTradingAdapter implements TradingAdapter {
   private lastApprovalContext?: ApprovalContext;
   private readonly quotedRequestIds = new Set<string>();
 
-  constructor(input: { privateKey: string; executionRpcUrl: string; uniswapApiKey: string }) {
+  constructor(input: {
+    privateKey: string;
+    executionRpcUrl: string;
+    uniswapApiKey: string;
+    uniswapApiUrl?: string;
+  }) {
     this.wallet = new Wallet(input.privateKey);
     this.provider = new JsonRpcProvider(input.executionRpcUrl);
-    this.client = new UniswapClient(input.uniswapApiKey);
+    this.client = new UniswapClient(input.uniswapApiKey, input.uniswapApiUrl);
   }
 
   async checkApproval(input: {

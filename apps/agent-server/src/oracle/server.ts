@@ -78,7 +78,7 @@ export async function registerOracleRoutes(
     wsHub: WsHub;
     budgetResetTimeZone: string;
     facilitatorUrl: string;
-    facilitatorMode: "real" | "demo";
+    facilitatorMode: "facilitator" | "demo";
     network: string;
     payToAddress: string;
     paymentAssetAddress: string;
@@ -86,6 +86,7 @@ export async function registerOracleRoutes(
     uniswapApiKey: string;
     executionChainId: number;
     monadUsdcAddress: string;
+    x402OraclePriceUsd: number;
   }
 ): Promise<void> {
   const paymentAdapter =
@@ -106,6 +107,7 @@ export async function registerOracleRoutes(
       paymentAssetDecimals: deps.paymentAssetDecimals,
       budgetResetTimeZone: deps.budgetResetTimeZone,
       enforceLocalBudget: false,
+      fixedCostUsd: deps.x402OraclePriceUsd,
       onPayment(payment) {
         deps.wsHub.broadcast({ type: "payment.update", payment });
       },

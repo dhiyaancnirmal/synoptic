@@ -1,14 +1,22 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import type { PaymentAdapter } from "@synoptic/agent-core";
+import {
+  MONAD_CHAIN_ID,
+  MONAD_TESTNET_CHAIN_ID,
+  RealAttestationAdapter,
+  type AttestationAdapter,
+  type PaymentAdapter
+} from "@synoptic/agent-core";
 import type { RuntimeStoreContract } from "../state/runtime-store.js";
 import { WsHub } from "../ws/hub.js";
 import { requireX402PaymentForResource } from "../oracle/middleware.js";
+import type { AgentServerEnv } from "../env.js";
 
 interface MarketplaceDeps {
   store: RuntimeStoreContract;
   wsHub: WsHub;
   paymentAdapter: PaymentAdapter;
+  env: AgentServerEnv;
   network: string;
   payToAddress: string;
   paymentAssetAddress: string;
@@ -43,7 +51,6 @@ interface ValidationFailure {
 
 type ValidationResult = ValidationSuccess | ValidationFailure;
 
-const MONAD_CHAIN_ID = 10143;
 const MARKETPLACE_FETCH_LIMIT = 500;
 
 const CATALOG: CatalogItem[] = [
@@ -147,6 +154,31 @@ function hashPayload(data: unknown): string {
   return createHash("sha256").update(JSON.stringify(data)).digest("hex");
 }
 
+function randomHex(bytes = 32): string {
+  return `0x${createHash("sha256").update(String(Date.now()) + String(Math.random())).digest("hex").slice(0, bytes * 2)}`;
+}
+
+function createMarketplaceAttestationAdapter(env: AgentServerEnv): AttestationAdapter | undefined {
+  if (env.kitePaymentMode === "demo" || env.swapExecutionMode === "simulated") {
+    return {
+      async recordService() {
+        return { attestationTxHash: randomHex(32) };
+      },
+      async recordTrade() {
+        return { attestationTxHash: randomHex(32) };
+      }
+    };
+  }
+  if (!env.agentPrivateKey || !env.kiteRpcUrl || !env.registryAddress) {
+    return undefined;
+  }
+  return new RealAttestationAdapter({
+    privateKey: env.agentPrivateKey,
+    kiteRpcUrl: env.kiteRpcUrl,
+    serviceRegistryAddress: env.registryAddress
+  });
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -178,7 +210,7 @@ function toNormalizedParams(input: unknown): Record<string, unknown> {
 function isMonadChain(params: Record<string, unknown>): boolean {
   const chainId = toNumber(params.chainId);
   if (chainId !== undefined) {
-    return chainId === MONAD_CHAIN_ID;
+    return chainId === MONAD_CHAIN_ID || chainId === MONAD_TESTNET_CHAIN_ID;
   }
   const chain = typeof params.chain === "string" ? params.chain.toLowerCase() : undefined;
   if (!chain) return true;
@@ -210,13 +242,23 @@ function validateSkuRequest(sku: string, raw: Record<string, unknown>): Validati
       ok: false,
       statusCode: 400,
       code: "CHAIN_UNSUPPORTED",
-      message: "Only Monad testnet chain data is available for this SKU"
+      message: "Only Monad chain data is available for this SKU"
     };
   }
 
   const params: Record<string, unknown> = {};
-  if ("chainId" in raw) params.chainId = MONAD_CHAIN_ID;
-  if ("chain" in raw) params.chain = "monad-testnet";
+  const requestedChainId = toNumber(raw.chainId);
+  const requestedChainRaw = typeof raw.chain === "string" ? raw.chain.toLowerCase() : undefined;
+  const normalizedChainId =
+    requestedChainId === MONAD_CHAIN_ID || requestedChainId === MONAD_TESTNET_CHAIN_ID
+      ? requestedChainId
+      : requestedChainRaw === "monad-testnet"
+        ? MONAD_TESTNET_CHAIN_ID
+        : MONAD_CHAIN_ID;
+  const normalizedChain = normalizedChainId === MONAD_TESTNET_CHAIN_ID ? "monad-testnet" : "monad";
+
+  if ("chainId" in raw) params.chainId = normalizedChainId;
+  if ("chain" in raw) params.chain = normalizedChain;
 
   switch (sku) {
     case "monad_lp_range_signal": {
@@ -724,6 +766,50 @@ export async function registerMarketplaceRoutes(
     const settledPayment = payments.find(
       (payment) => payment.status === "settled" && payment.serviceUrl === `/marketplace/products/${sku}/purchase`
     );
+    const attestationAdapter = createMarketplaceAttestationAdapter(deps.env);
+    if (!attestationAdapter) {
+      return reply.status(503).send({
+        code: "ATTESTATION_NOT_CONFIGURED",
+        message: "Set AGENT_PRIVATE_KEY, KITE_RPC_URL, and SERVICE_REGISTRY_ADDRESS"
+      });
+    }
+
+    const attestationChainId =
+      typeof validated.params.chainId === "number" ? validated.params.chainId : MONAD_CHAIN_ID;
+    const sourceTxRef =
+      settledPayment?.kiteTxHash ?? `purchase:${item.sku}:${resultHash}`;
+    let attestationTxHash: string;
+    try {
+      if (attestationAdapter.recordService) {
+        const attested = await attestationAdapter.recordService({
+          serviceType: "marketplace_purchase",
+          sourceChainId: attestationChainId,
+          sourceTxHashOrRef: sourceTxRef,
+          tokenIn: deps.paymentAssetAddress,
+          tokenOut: deps.paymentAssetAddress,
+          amountIn: settledPayment?.amountWei ?? "0",
+          amountOut: settledPayment?.amountWei ?? "0",
+          metadata: `x402-gated marketplace purchase:${item.sku}`
+        });
+        attestationTxHash = attested.attestationTxHash;
+      } else {
+        const attested = await attestationAdapter.recordTrade({
+          sourceChainId: attestationChainId,
+          sourceTxHash: sourceTxRef,
+          tokenIn: deps.paymentAssetAddress,
+          tokenOut: deps.paymentAssetAddress,
+          amountIn: settledPayment?.amountWei ?? "0",
+          amountOut: settledPayment?.amountWei ?? "0",
+          strategyReason: `x402-gated marketplace purchase:${item.sku}`
+        });
+        attestationTxHash = attested.attestationTxHash;
+      }
+    } catch (cause) {
+      return reply.status(502).send({
+        code: "ATTESTATION_FAILED",
+        message: cause instanceof Error ? cause.message : "Attestation failed"
+      });
+    }
 
     const purchase = await deps.store.createPurchase({
       agentId: settledPayment?.agentId,
@@ -738,7 +824,8 @@ export async function registerMarketplaceRoutes(
         refreshCadence: item.refreshCadence,
         sampleSchema: item.sampleSchema,
         dataConfidence: item.dataConfidence,
-        data
+        data,
+        attestationTxHash
       }
     });
 
@@ -748,12 +835,16 @@ export async function registerMarketplaceRoutes(
         id: purchase.id,
         agentId: settledPayment?.agentId ?? "unknown",
         eventType: "marketplace.purchase",
-        chain: "monad-testnet",
+        chain:
+          typeof validated.params.chain === "string"
+            ? (validated.params.chain as "monad" | "monad-testnet")
+            : "monad",
         data: {
           sku: item.sku,
           purchaseId: purchase.id,
           paymentId: settledPayment?.id,
-          resultHash
+          resultHash,
+          attestationTxHash
         },
         createdAt: purchase.createdAt
       }
@@ -768,6 +859,7 @@ export async function registerMarketplaceRoutes(
       dataConfidence: item.dataConfidence,
       paymentId: settledPayment?.id,
       settlementTxHash: settledPayment?.kiteTxHash,
+      attestationTxHash,
       params: validated.params,
       data,
       resultHash,

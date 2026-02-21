@@ -11,8 +11,10 @@ const ENV_MAPPINGS: Record<string, keyof Config> = {
   SYNOPTIC_API_URL: "apiUrl",
   SYNOPTIC_KITE_RPC_URL: "kiteRpcUrl",
   SYNOPTIC_MONAD_RPC_URL: "monadRpcUrl",
+  SYNOPTIC_MONAD_TESTNET_RPC_URL: "monadTestnetRpcUrl",
   SYNOPTIC_KITE_EXPLORER_URL: "kiteExplorerUrl",
   SYNOPTIC_MONAD_EXPLORER_URL: "monadExplorerUrl",
+  SYNOPTIC_MONAD_TESTNET_EXPLORER_URL: "monadTestnetExplorerUrl",
   SYNOPTIC_LOG_LEVEL: "logLevel"
 };
 

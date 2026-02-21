@@ -44,7 +44,11 @@ export async function fundCommand(options: FundOptions = {}): Promise<void> {
 
   const monadSpinner = ora("Checking Monad balance...").start();
   const monadBalance = await getBalance(wallet.chains.monad.rpc, wallet.address);
-  monadSpinner.succeed(`Monad: ${chalk.cyan(monadBalance)} MON`);
+  monadSpinner.succeed(`Monad mainnet: ${chalk.cyan(monadBalance)} MON`);
+
+  const monadTestnetBalance = wallet.chains.monadTestnet
+    ? await getBalance(wallet.chains.monadTestnet.rpc, wallet.address)
+    : "n/a";
 
   console.log("");
 
@@ -70,7 +74,14 @@ export async function fundCommand(options: FundOptions = {}): Promise<void> {
   }
 
   if (!monadHasFunds) {
-    console.log(`  ${chalk.cyan("Monad Testnet:")}`);
+    console.log(`  ${chalk.cyan("Monad Mainnet:")}`);
+    console.log("  Fund this wallet with MON on chain 143 (mainnet).");
+    console.log(`  Address: ${wallet.address}`);
+    console.log("");
+  }
+
+  if (wallet.chains.monadTestnet && parseFloat(monadTestnetBalance) <= 0) {
+    console.log(`  ${chalk.cyan("Monad Testnet (optional):")}`);
     console.log(`  ${chalk.blue(MONAD_FAUCET_URL)}`);
     console.log(`  Address: ${wallet.address}`);
     console.log("");

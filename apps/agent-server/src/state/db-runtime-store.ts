@@ -9,6 +9,7 @@ import {
   marketplacePurchases
 } from "@synoptic/db";
 import type { ActivityEvent, Agent, LiquidityAction, LiquidityActionStatus, Trade } from "@synoptic/types";
+import { getExecutionChainProfile } from "@synoptic/agent-core";
 import type {
   CompatEvent,
   CompatOrder,
@@ -471,6 +472,8 @@ export class DbRuntimeStore implements RuntimeStoreContract {
     side: "BUY" | "SELL";
     size: string;
     marketId: string;
+    chainId?: number;
+    chain?: string;
   }): Promise<CompatOrder> {
     const now = new Date().toISOString();
     const orderId = randomUUID();
@@ -487,11 +490,15 @@ export class DbRuntimeStore implements RuntimeStoreContract {
     };
     this.orders.set(orderId, order);
 
+    const chainId = input.chainId ?? 143;
+    const profile = getExecutionChainProfile(chainId);
+    const chain = input.chain ?? profile.name;
+
     await this.repos.tradeRepo.create({
       agentId: input.agentId,
-      chainId: 10143,
-      tokenIn: "0x760afe86e5de5fa0ee542fc7b7b713e1c5425701",
-      tokenOut: "0x62534e4bbd6d9ebac0ac99aeaa0aa48e56372df0",
+      chainId,
+      tokenIn: profile.defaultTradePair.tokenIn,
+      tokenOut: profile.defaultTradePair.tokenOut,
       amountIn: input.size,
       amountOut: input.size,
       routingType: "BEST_PRICE",
@@ -499,7 +506,7 @@ export class DbRuntimeStore implements RuntimeStoreContract {
       status: "confirmed",
       strategyReason: "compat.execute"
     });
-    await this.addActivity(input.agentId, "trade.executed", "monad-testnet", { orderId });
+    await this.addActivity(input.agentId, "trade.executed", chain, { orderId });
     return order;
   }
 }

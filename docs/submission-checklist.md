@@ -4,9 +4,10 @@
 
 - Agent identity is visible in UI/CLI.
 - Every paid action shows `402 -> payment -> success` lifecycle.
+- Paid action calls include bearer auth + x402 headers.
 - Misuse and insufficient-funds paths show graceful errors.
 - At least one on-chain payment settlement proof is captured.
-- At least one on-chain attestation proof is captured.
+- Trade, liquidity, and marketplace purchase actions all emit attestation proofs.
 
 ## Uniswap
 

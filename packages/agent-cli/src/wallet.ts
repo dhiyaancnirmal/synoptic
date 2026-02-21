@@ -61,7 +61,8 @@ export function generateWallet(): WalletData {
     createdAt: new Date().toISOString(),
     chains: {
       kite: { chainId: 2368, rpc: "https://rpc-testnet.gokite.ai/" },
-      monad: { chainId: 10143, rpc: "https://testnet-rpc.monad.xyz" }
+      monad: { chainId: 143, rpc: "https://rpc.monad.xyz" },
+      monadTestnet: { chainId: 10143, rpc: "https://testnet-rpc.monad.xyz" }
     }
   };
 
