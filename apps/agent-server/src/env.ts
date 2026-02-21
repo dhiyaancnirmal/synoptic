@@ -8,6 +8,7 @@ export interface AgentServerEnv {
   authSessionTtlSeconds: number;
   budgetResetTimeZone: string;
   kiteFacilitatorUrl: string;
+  kitePaymentScheme: string;
   kiteNetwork: string;
   kiteTestUsdtAddress: string;
   kitePaymentAssetDecimals: number;
@@ -56,6 +57,7 @@ export function loadEnv(): AgentServerEnv {
     authSessionTtlSeconds: readNumber(process.env.AUTH_SESSION_TTL_SECONDS, 60 * 60),
     budgetResetTimeZone: process.env.BUDGET_RESET_TIMEZONE ?? "UTC",
     kiteFacilitatorUrl: process.env.KITE_FACILITATOR_URL ?? "https://facilitator.pieverse.io",
+    kitePaymentScheme: process.env.KITE_PAYMENT_SCHEME ?? "gokite-aa",
     kiteNetwork: process.env.KITE_NETWORK ?? "kite-testnet",
     kiteTestUsdtAddress:
       process.env.KITE_TEST_USDT_ADDRESS ?? "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",

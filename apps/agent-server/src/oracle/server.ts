@@ -29,6 +29,7 @@ export async function registerOracleRoutes(
     budgetResetTimeZone: string;
     facilitatorUrl: string;
     facilitatorMode: "real" | "demo";
+    scheme: string;
     network: string;
     payToAddress: string;
     paymentAssetAddress: string;
@@ -47,6 +48,7 @@ export async function registerOracleRoutes(
     const allowed = await requireX402Payment(request, reply, {
       store: deps.store,
       paymentAdapter,
+      paymentScheme: deps.scheme,
       network: deps.network,
       payToAddress: deps.payToAddress,
       paymentAssetAddress: deps.paymentAssetAddress,
