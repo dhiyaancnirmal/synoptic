@@ -1,0 +1,37 @@
+{
+  "name": "@synoptic/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "synoptic-agent": "./dist/index.js"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsup && node scripts/postbuild.mjs",
+    "dev": "tsx src/index.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test tests/**/*.test.ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@synoptic/agent-core": "workspace:*",
+    "@synoptic/types": "workspace:*",
+    "chalk": "^5.4.1",
+    "clipboardy": "^4.0.0",
+    "commander": "^13.1.0",
+    "ethers": "^6.16.0",
+    "ora": "^8.2.0",
+    "qrcode-terminal": "^0.12.0",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/qrcode-terminal": "^0.12.2",
+    "tsup": "^8.5.0",
+    "tsx": "^4.21.0"
+  }
+}

@@ -116,6 +116,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     "/auth/siwe/challenge",
     "/auth/siwe/verify",
     "/webhooks/quicknode/monad",
+    "/oracle/price",
     "/trade/quote",
     "/trade/execute"
   ]);
@@ -135,6 +136,11 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     }
   });
 
+  const tradingConfigured =
+    Boolean(env.agentPrivateKey) && Boolean(env.executionRpcUrl) && Boolean(env.uniswapApiKey);
+  const attestationConfigured =
+    Boolean(env.agentPrivateKey) && Boolean(env.kiteRpcUrl) && Boolean(env.registryAddress);
+
   app.get("/health", async () => ({
     status: "ok",
     service: "agent-server",
@@ -143,6 +149,10 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
       database: usesDatabase ? "up" : "down",
       facilitator: "real",
       auth: "passport"
+    },
+    capabilities: {
+      trading: tradingConfigured ? "configured" : "not_configured",
+      attestation: attestationConfigured ? "configured" : "not_configured"
     }
   }));
 

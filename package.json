@@ -27,7 +27,11 @@
     "deploy:contracts": "turbo deploy:contracts --filter=@synoptic/contracts",
     "clean": "turbo run clean && rm -rf node_modules",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "qn:usage": "node scripts/quicknode.mjs usage",
+    "qn:endpoints": "node scripts/quicknode.mjs endpoints",
+    "qn:pause": "node scripts/quicknode.mjs pause-monad",
+    "qn:resume": "node scripts/quicknode.mjs resume"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

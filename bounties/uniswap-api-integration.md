@@ -1,77 +1,60 @@
-# Uniswap Bounty: Build with Uniswap API
+# Uniswap Bounty (Full Text)
 
-## Overview
+## Bounty Prompt
 
-Build an application or autonomous agent that integrates the Uniswap API to execute swaps or provide liquidity. Use the Uniswap Developer Platform to generate API keys and optionally build with the Uniswap AI Skill.
+Build an application or agent that integrates the Uniswap API to execute swaps or provide liquidity. Use the Developer Platform to generate your API keys and build faster with our AI Skill.
 
-## Category
+## Bounty Category
 
 - Feature Usage
 
-## Prize
+## Prize Amount
 
-- Total prize pool: `$5,000`
-- Awards: `2`
-- 1st place: `$3,000`
-- 2nd place: `$2,000`
-- If fewer than two projects qualify, prize distribution may change (`$1,000` to `$5,000` range)
-- If no projects meet criteria, no award is required
+- `$5,000`
+
+## Number of Projects Awarded
+
+- `2`
+
+## Winner Breakdown
+
+- 1st Place gets `$3,000`
+- 2nd Place gets `$2,000`
+
+If there are fewer than two projects, or they do not meet criteria, prize allocation may change. It can range from `$1,000` to `$5,000`. If no project meets criteria, there may be no winner.
 
 ## Requirements
 
-- Functional on testnet or mainnet
-- Must integrate Uniswap API
+- The application or agent must be functional on testnet or mainnet.
+- Submitted projects must integrate the Uniswap API.
 
-## Required Integration Shape
+## What Does a Successful Project Look Like?
 
-Implement Trading API as a server-side 3-step flow:
+- An application with swap functionality on testnet/mainnet that integrates Uniswap API and can be used to sign transactions via Uniswap infrastructure.
+- A trading agent that is able to execute spot-swaps via the Uniswap API.
 
-1. `POST /check_approval`
-2. `POST /quote`
-3. `POST /swap`
+## UI/UX Design Requirements
 
-Required headers:
+- The application or agent must have a publicly available interface allowing judges to interact via a URL.
+- The application or agent must be open source.
+- The interface can be simple, but intuitive UX earns extra points.
 
-- `x-api-key`
-- `x-universal-router-version: 2.0`
-- `Content-Type: application/json`
+## How Are We Judging It?
 
-Implementation note:
+- Does it integrate the API in a creative way?
+- Is its use case and performance clear?
+- Is it functional and close to a shipped MVP on testnet or mainnet?
 
-- Use a chain/network supported by the current Uniswap Trading API for the submitted swap path.
+## Impact on the Organization
 
-## Successful Project Signals
-
-- Functional swap experience on testnet/mainnet
-- Uses Uniswap infrastructure to sign transactions
-- Trading agent that executes spot swaps via Uniswap API
-
-## UI/UX Requirements
-
-- Public interface that judges can access via URL
-- Open-source codebase required
-- Interface can be simple; intuitive UX earns extra points
-
-## Judging Criteria
-
-- Creative API integration
-- Clear use case and measurable performance
-- Functional and close to shipped MVP on testnet/mainnet
-
-## Ecosystem Impact
-
-Participation helps Uniswap improve:
-
-- Uniswap API developer experience
-- Developer Platform usability
-- Builder enablement for API-powered products
+Participation helps Uniswap collect feedback on the Uniswap API, improving Developer Platform DX and enabling builders to ship API-powered products.
 
 ## Resources
 
 - Developer Platform (API keys): [https://developers.uniswap.org/dashboard](https://developers.uniswap.org/dashboard)
-- Uniswap AI Skill: [https://github.com/Uniswap/uniswap-ai](https://github.com/Uniswap/uniswap-ai)
-- API docs: [https://api-docs.uniswap.org/introduction](https://api-docs.uniswap.org/introduction)
-- Feedback form: [https://share.hsforms.com/1DoHuIbyqQr65_aVuCVeybws8pgg](https://share.hsforms.com/1DoHuIbyqQr65_aVuCVeybws8pgg)
+- AI Skill: [https://github.com/Uniswap/uniswap-ai](https://github.com/Uniswap/uniswap-ai)
+- Docs: [https://api-docs.uniswap.org/introduction](https://api-docs.uniswap.org/introduction)
+- Feedback Form: [https://share.hsforms.com/1DoHuIbyqQr65_aVuCVeybws8pgg](https://share.hsforms.com/1DoHuIbyqQr65_aVuCVeybws8pgg)
 
 ## Example Use Cases
 
@@ -80,41 +63,6 @@ Participation helps Uniswap improve:
 - Portfolio management
 - Trading strategies
 
-## Recruitment
+## Recruitment Opportunities
 
 - N/A
-
-## Synoptic Proof Checklist (P1)
-
-Run command set (Node `22.22.0`):
-
-```bash
-nvm install 22.22.0
-nvm use 22.22.0
-corepack enable
-pnpm install
-bash scripts/p0-p1-evidence-harness.sh
-```
-
-Expected terminal outputs:
-
-- `ok - Uniswap client uses required headers on check_approval, quote, and swap`
-- `ok - Uniswap client validates tx data in /check_approval and /swap responses`
-
-## Requirement -> Evidence Map
-
-| Requirement                        | Evidence artifact                                                                                                                   |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Functional on testnet/mainnet path | Monad explorer swap tx screenshot/link from demo run                                                                                |
-| Trading API integration            | `packages/agent-core/src/trading/uniswap-client.ts` shows `/check_approval`, `/quote`, `/swap` flow                                 |
-| Required headers                   | Harness log `02-uniswap-acceptance-tests.log` plus test file assertions in `packages/agent-core/src/trading/uniswap-client.test.ts` |
-| Public interface URL               | Dashboard URL in submission plus `/trading` screenshot                                                                              |
-| Open-source codebase               | Public repository + linked integration files                                                                                        |
-
-## Screenshot and Log Points
-
-Capture all of:
-
-- Dashboard `/trading` screenshot with `Trade Timeline`.
-- Monad explorer screenshot for executed swap tx.
-- `artifacts/evidence/p0-p1/<timestamp-utc>/02-uniswap-acceptance-tests.log`.

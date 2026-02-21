@@ -1,7 +1,0 @@
-{
-  "framework": "nextjs",
-  "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm --filter @synoptic/dashboard build",
-  "devCommand": "pnpm --filter @synoptic/dashboard dev",
-  "outputDirectory": "apps/dashboard/.next"
-}

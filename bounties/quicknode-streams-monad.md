@@ -1,135 +1,66 @@
-# QuickNode Streams Bounty: Monad Data Pipeline
+# QuickNode Bounty (Full Text)
 
-## Overview
+## Bounty Prompt
 
-Build a project with a working demo that uses QuickNode Streams as the primary source of blockchain data for Monad. Streams should power ingestion, transformation, and delivery to the app/database.
+QuickNode Streams is an end-to-end data tool that handles extraction, transformation, and loading for robust pipelines. Set it up once and forget it. Projects using Streams to build on Monad are eligible for this bounty.
 
-## Category
+## Bounty Category
 
 - Feature Usage
 
-## Prize
+## Prize Amount
 
-- Prize: `$1,000`
-- Awards: `1`
-- Winner package: `$1,000` + `$5,000` in QuickNode credits
+- `1000`
+
+## Number of Projects Awarded
+
+- `1`
+
+## Winner Breakdown
+
+- 1st Place gets `$1,000` + `$5,000` in QuickNode credits.
 
 ## Requirements
 
-- Working demo with QuickNode Streams as primary data source
-- Streams used for ingestion, transformation, and delivery
-- Basic docs/code that show Streams config and consumption path
+Participants must build a project with a working demo that clearly integrates QuickNode Streams as the primary source of blockchain data. The submission should demonstrate Streams being used for data ingestion, transformation, and delivery to the application or database, along with basic documentation or code showing how Streams is configured and how data is consumed.
 
-## Account/Plan Note
+## What Does a Successful Project Look Like?
 
-- If free-tier endpoint limits allow only one endpoint/account, this track can be the single QuickNode submission path.
-- Keep this as lower-risk default while Kite and Uniswap priorities are being completed.
+A successful project meaningfully leverages QuickNode Streams to power an application's data needs. Examples include using Streams to backfill historical blockchain data, applying Filters to refine or segment incoming data in real time, triggering application workflows from streamed events, or maintaining an entire Streams powered indexed database. Creativity in how Streams simplifies data pipelines and improves reliability is highly encouraged.
 
-## Attestation Mapping (Kite ServiceRegistry)
+## UI/UX Design Requirements
 
-Use Kite as the attestation layer for Monad actions:
+The project must provide a user-friendly interface focused on clear and intuitive data presentation. Applications may be web-based, mobile, CLI, or SDKs, but the primary emphasis should be on how easily end users can explore, understand, and act on the streamed blockchain information.
 
-```text
-Monad swap executed (chainId 10143, txHash 0x...)
-  -> ServiceRegistry.recordService(targetChainId=10143, targetTxHash=0x...)
-```
+If the project includes a UI, it should be easy to navigate, well-structured, and designed to make complex blockchain data readable and actionable. Browser-based applications must be deployed to a publicly accessible demo URL. CLI tools or SDKs should offer clear commands, outputs, and documentation.
 
-This keeps the evidence model consistent with HyperCore/HyperEVM tracks.
+## How Are We Judging It?
 
-## Successful Project Signals
+- Completeness of the working demo: The project should function as described, with QuickNode Streams actively powering the core data flow.
+- Effective use of QuickNode Streams: How well Streams is integrated as the primary data source, including use of filtering, backfilling, or real-time ingestion.
+- Novelty and creativity of the idea: Original use cases or innovative approaches to solving problems.
+- UI/UX or developer experience: Quality of the interface, whether UI, CLI, or SDK, and how intuitive it is for users or developers to interact with the project.
 
-Strong examples include:
+## Impact on the Organization
 
-- Historical backfill via Streams
-- Real-time event ingestion and filtering
-- Event-driven workflows triggered from streamed data
-- Streams-powered indexed database
-
-Creativity in making data pipelines simpler and more reliable is encouraged.
-
-## UI/UX Requirements
-
-Interface should make blockchain data readable/actionable:
-
-- Web, mobile, CLI, or SDK allowed
-- Browser UI must be on a public demo URL
-- CLI/SDK must provide clear commands, outputs, docs
-
-## Judging Criteria
-
-- Completeness of working demo
-- Effective use of Streams as primary data source
-- Novelty/creativity
-- UI/UX or developer experience quality
-
-## Ecosystem Impact
-
-Projects help QuickNode evaluate:
-
-- Real-world Streams integration patterns
-- Developer experience gaps
-- Usability and performance improvements
-- Documentation opportunities
+Teams working on this bounty help QuickNode explore novel and creative ways to use Streams in real-world applications. Their projects provide feedback on developer experience, usability, and performance, and surface new use cases and integration patterns that can inform product improvements and documentation.
 
 ## Resources
 
 - Streams docs: [https://www.quicknode.com/docs/streams](https://www.quicknode.com/docs/streams)
-- Streams filters docs: [https://www.quicknode.com/docs/streams/filters](https://www.quicknode.com/docs/streams/filters)
+- Filters docs: [https://www.quicknode.com/docs/streams/filters](https://www.quicknode.com/docs/streams/filters)
+- Video on Streams setup
 - Telegram support: [https://t.me/sensahill](https://t.me/sensahill)
-- Booth reference from source details: `208D`
+- On-ground QuickNode booth: `208D`
 
 ## Example Use Cases
 
-- Real-time dashboards
-- Historical indexing/backfill
-- Alerts and automations
+- Real-time dashboards powered by QuickNode Streams
+- Historical data backfilling and indexing
+- Event-driven alerts and automations
 - Analytics pipelines
-- Data simplification layers for users/devs
+- Applications that simplify complex blockchain activity into easily consumable insights for users or developers
 
-## Recruitment
+## Recruitment Opportunities
 
 - N/A
-
-## Activation Gate (Must Pass First)
-
-Do not start this track until P0/P1 are locked.
-
-```bash
-nvm install 22.22.0
-nvm use 22.22.0
-bash scripts/p0-p1-evidence-harness.sh
-```
-
-Required gate evidence:
-
-- P0/P1 harness bundle exists at `artifacts/evidence/p0-p1/<timestamp-utc>/`.
-- `SUMMARY.txt` shows all required P0/P1 pass markers.
-
-## Single-Track Integration Plan
-
-1. Create Monad Streams pipeline in QuickNode (single account/endpoint path).
-2. Add filter for swap events used by Synoptic.
-3. Deliver events to Synoptic webhook endpoint.
-4. Transform and persist events in DB.
-5. Render events in dashboard activity feed.
-6. Link each streamed swap to Kite attestation (`targetChainId=10143`).
-
-## Evidence Harness (Post-Gate Only)
-
-Run with Node `22.22.0`:
-
-```bash
-nvm use 22.22.0
-# Start app services and collect:
-# - webhook receiver logs
-# - DB insertion logs
-# - dashboard event rendering proof
-```
-
-Capture all of:
-
-- QuickNode stream config screenshot (dataset/filter/webhook destination).
-- Webhook delivery log with event id/timestamp.
-- DB proof of ingested transformed event.
-- Dashboard screenshot showing streamed event.
-- Kite attestation proof tied to the same Monad swap reference.
