@@ -1,96 +1,159 @@
+import chalk from "chalk";
 import ora from "ora";
 import { Wallet } from "ethers";
 import { resolveConfig } from "../config.js";
 import { createApiClient } from "../api-client.js";
-import { createMcpClient } from "../kite-mcp.js";
-import { generateWallet, loadWallet } from "../wallet.js";
-import { loadSession, saveSession, type AgentSession } from "../session.js";
-import { printHeader, printInfo, printWarning } from "../utils/formatting.js";
+import {
+  checkMcpAvailable,
+  createMcpClient,
+  formatMcpInstructions,
+  KITE_MCP_SETUP_INSTRUCTIONS
+} from "../kite-mcp.js";
+import {
+  generateWallet,
+  getWalletPath,
+  loadWallet
+} from "../wallet.js";
+import { getSessionPath, saveSession } from "../session.js";
+import {
+  printError,
+  printHeader,
+  printInfo,
+  printSuccess,
+  printWarning
+} from "../utils/formatting.js";
 
-function persistSession(input: {
-  accessToken: string;
-  refreshToken: string;
-  accessTtlSeconds: number;
-  refreshTtlSeconds: number;
-  agentId: string;
-  ownerAddress: string;
-  linkedPayerAddress?: string;
-  lastError?: string;
-}): void {
-  const now = Date.now();
-  const session: AgentSession = {
-    accessToken: input.accessToken,
-    refreshToken: input.refreshToken,
-    accessExpiresAt: new Date(now + input.accessTtlSeconds * 1000).toISOString(),
-    refreshExpiresAt: new Date(now + input.refreshTtlSeconds * 1000).toISOString(),
-    agentId: input.agentId,
-    ownerAddress: input.ownerAddress,
-    linkedPayerAddress: input.linkedPayerAddress,
-    readiness: {
-      wallet: "ok",
-      auth: "ok",
-      identity: input.linkedPayerAddress ? "linked" : "warning",
-      lastError: input.lastError
-    }
-  };
-  saveSession(session);
+function ensureWallet(): { wallet: ReturnType<typeof generateWallet>; created: boolean } {
+  const existing = loadWallet();
+  if (existing) {
+    return { wallet: existing, created: false };
+  }
+  return { wallet: generateWallet(), created: true };
 }
 
 export async function setupCommand(): Promise<void> {
   printHeader("Synoptic Agent Setup");
-  const spinner = ora("Loading wallet...").start();
-  const wallet = loadWallet() ?? generateWallet();
-  spinner.succeed(`Wallet ready: ${wallet.address}`);
 
-  const config = resolveConfig();
-  const api = createApiClient(config);
-  const challengeSpinner = ora("Requesting wallet challenge...").start();
-  const challenge = await api.walletChallenge({ ownerAddress: wallet.address.toLowerCase() });
-  challengeSpinner.succeed("Challenge received");
+  const spinner = ora("Preparing local wallet and session...").start();
 
-  const signatureSpinner = ora("Signing challenge...").start();
-  const signer = new Wallet(wallet.privateKey);
-  const signature = await signer.signMessage(challenge.message);
-  signatureSpinner.succeed("Challenge signed");
+  try {
+    const { wallet, created } = ensureWallet();
+    spinner.text = created
+      ? "Wallet created. Performing wallet challenge auth..."
+      : "Wallet found. Performing wallet challenge auth...";
 
-  const verifySpinner = ora("Verifying session...").start();
-  const session = await api.walletVerify({
-    challengeId: challenge.challengeId,
-    message: challenge.message,
-    signature
-  });
-  verifySpinner.succeed("Session issued");
+    const config = resolveConfig();
+    const mcpConfigured = checkMcpAvailable();
+    const mcpClient = createMcpClient();
 
-  let linkedPayerAddress: string | undefined;
-  let lastError: string | undefined;
-  const mcp = createMcpClient();
-  if (mcp) {
-    const linkSpinner = ora("Linking payer identity...").start();
-    try {
-      const payer = await mcp.getPayerAddr();
-      const linked = await api.linkIdentityPayer(payer);
-      linkedPayerAddress = linked.linkedPayerAddress;
-      linkSpinner.succeed(`Payer linked: ${linkedPayerAddress}`);
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-      linkSpinner.warn("Payer link unavailable; continuing with warnings");
+    const apiClient = createApiClient(config, mcpClient, { useSession: false });
+    const challenge = await apiClient.createWalletChallenge({ ownerAddress: wallet.address });
+
+    const signer = new Wallet(wallet.privateKey);
+    const signature = await signer.signMessage(challenge.message);
+
+    const verified = await apiClient.verifyWalletChallenge({
+      challengeId: challenge.challengeId,
+      message: challenge.message,
+      signature,
+      ownerAddress: challenge.ownerAddress,
+      agentId: challenge.agentId
+    });
+
+    const accessToken = verified.accessToken ?? verified.token ?? "";
+    if (!accessToken || !verified.refreshToken) {
+      throw new Error("wallet verify did not return access and refresh tokens");
     }
-  } else {
-    lastError = "MCP unavailable";
-    printWarning("Kite MCP unavailable; skipping payer link.");
+
+    let linkedPayerAddress: string | undefined;
+    let identityLinked = false;
+    let readinessError: string | undefined;
+
+    const baseReadiness = {
+      walletReady: true,
+      mcpReady: mcpConfigured,
+      identityLinked: false,
+      checkedAt: new Date().toISOString(),
+      ...(readinessError ? { lastError: readinessError } : {})
+    };
+
+    saveSession({
+      accessToken,
+      refreshToken: verified.refreshToken,
+      accessExpiresAt: verified.expiresAt,
+      refreshExpiresAt: verified.refreshExpiresAt,
+      agentId: verified.agentId,
+      ownerAddress: verified.ownerAddress,
+      readiness: baseReadiness
+    });
+
+    if (mcpClient) {
+      try {
+        spinner.text = "Linking payer identity using Kite MCP...";
+        linkedPayerAddress = await mcpClient.getPayerAddr();
+
+        const authClient = createApiClient(config, mcpClient, { useSession: true });
+        await authClient.linkIdentity(linkedPayerAddress);
+        identityLinked = true;
+      } catch (error) {
+        readinessError = error instanceof Error ? error.message : String(error);
+      }
+    } else {
+      readinessError = "Kite MCP unavailable for payer link";
+    }
+
+    saveSession({
+      accessToken,
+      refreshToken: verified.refreshToken,
+      accessExpiresAt: verified.expiresAt,
+      refreshExpiresAt: verified.refreshExpiresAt,
+      agentId: verified.agentId,
+      ownerAddress: verified.ownerAddress,
+      linkedPayerAddress,
+      readiness: {
+        walletReady: true,
+        mcpReady: mcpConfigured,
+        identityLinked,
+        checkedAt: new Date().toISOString(),
+        ...(readinessError ? { lastError: readinessError } : {})
+      }
+    });
+
+    spinner.succeed(identityLinked ? "Setup complete" : "Setup complete with warnings");
+    console.log("");
+    printSuccess("Synoptic agent is configured and session is persisted");
+    console.log("");
+    console.log(`  ${chalk.dim("Wallet:")} ${chalk.green(wallet.address)}`);
+    console.log(`  ${chalk.dim("Wallet file:")} ${chalk.dim(getWalletPath())}`);
+    console.log(`  ${chalk.dim("Session file:")} ${chalk.dim(getSessionPath())}`);
+    console.log(`  ${chalk.dim("Agent ID:")} ${chalk.green(verified.agentId)}`);
+    console.log(`  ${chalk.dim("Owner:")} ${chalk.green(verified.ownerAddress)}`);
+    console.log(`  ${chalk.dim("Payer:")} ${chalk.green(linkedPayerAddress ?? "not linked")}`);
+    console.log(
+      `  ${chalk.dim("Readiness:")} ${identityLinked ? chalk.green("ready") : chalk.yellow("ready_with_warnings")}`
+    );
+    console.log("");
+
+    if (!mcpConfigured) {
+      printWarning("Kite MCP is not configured, so identity link is pending.");
+      console.log("");
+      console.log(KITE_MCP_SETUP_INSTRUCTIONS);
+      console.log("");
+    } else if (!identityLinked) {
+      printWarning("MCP was detected but identity link did not complete.");
+      if (readinessError) {
+        printInfo(`link error: ${readinessError}`);
+      }
+      console.log("");
+      printInfo(formatMcpInstructions());
+      console.log("");
+    }
+
+    printInfo("Next: run `npx @synoptic/agent status` then `npx @synoptic/agent start`.");
+    console.log("");
+  } catch (error) {
+    spinner.fail("Setup failed");
+    printError(error instanceof Error ? error.message : String(error));
+    process.exit(1);
   }
-
-  persistSession({
-    ...session,
-    linkedPayerAddress,
-    lastError
-  });
-
-  const existing = loadSession();
-  printInfo(
-    existing?.readiness?.identity === "linked"
-      ? "Setup complete: ready"
-      : "Setup complete: ready_with_warnings"
-  );
 }
-

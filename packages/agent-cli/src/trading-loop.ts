@@ -1,7 +1,11 @@
 import type { Config, TradingLoopOptions, TickResult, TradeResult, TradeSignal } from "./types.js";
 import { loadWallet } from "./wallet.js";
 import { createApiClient } from "./api-client.js";
-import { createMcpClient, KITE_MCP_SETUP_INSTRUCTIONS } from "./kite-mcp.js";
+import {
+  createMcpClient,
+  KITE_MCP_SETUP_INSTRUCTIONS,
+  type KiteMcpClient
+} from "./kite-mcp.js";
 import logger from "./logger.js";
 
 interface PriceSnapshot {
@@ -50,12 +54,13 @@ async function sleep(ms: number): Promise<void> {
 
 export async function runTradingLoop(
   config: Config,
-  options: TradingLoopOptions = {}
+  options: TradingLoopOptions & { mcpClient?: KiteMcpClient | null } = {}
 ): Promise<void> {
   const {
     dryRun = false,
     tickIntervalMs = config.tickIntervalMs,
     amount = config.defaultAmount,
+    mcpClient: injectedMcpClient,
     onTick,
     onTrade,
     onError
@@ -63,15 +68,15 @@ export async function runTradingLoop(
 
   const wallet = loadWallet();
   if (!wallet) {
-    throw new Error("No wallet found. Run `synoptic-agent init` first.");
+    throw new Error("No wallet found. Run `synoptic-agent setup` first.");
   }
 
-  const mcpClient = createMcpClient();
+  const mcpClient = injectedMcpClient ?? createMcpClient();
   if (!mcpClient) {
     throw new Error(`Kite MCP not configured.\n${KITE_MCP_SETUP_INSTRUCTIONS}`);
   }
 
-  const apiClient = createApiClient(config, mcpClient);
+  const apiClient = createApiClient(config, mcpClient, { useSession: true });
   const strategy = new MomentumStrategy();
 
   logger.info("Starting trading loop", {

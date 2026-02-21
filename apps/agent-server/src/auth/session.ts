@@ -6,12 +6,19 @@ export interface SessionClaims {
   ownerAddress: string;
   authMode: "passport";
   tokenType: "access" | "refresh";
-  jti: string;
   iat: number;
   exp: number;
+  jti?: string;
 }
 
-export interface ChallengeRecord {
+export interface SessionPair {
+  accessToken: string;
+  refreshToken: string;
+  accessExpiresAt: string;
+  refreshExpiresAt: string;
+}
+
+interface ChallengeRecord {
   id: string;
   nonce: string;
   message: string;
@@ -30,7 +37,10 @@ function base64UrlDecode(value: string): string {
 
 export class SessionAuth {
   private readonly challenges = new Map<string, ChallengeRecord>();
-  private readonly revokedRefreshJti = new Set<string>();
+  private readonly refreshTokens = new Map<
+    string,
+    { ownerAddress: string; agentId: string; expiresAt: number }
+  >();
 
   constructor(private readonly secret: string) { }
 
@@ -94,97 +104,81 @@ export class SessionAuth {
     });
   }
 
-  signAccessSession(input: {
-    ownerAddress: string;
-    agentId: string;
-    ttlSeconds: number;
-  }): string {
-    return this.signToken({ ...input, tokenType: "access" });
-  }
-
-  signRefreshSession(input: {
-    ownerAddress: string;
-    agentId: string;
-    ttlSeconds: number;
-  }): string {
-    return this.signToken({ ...input, tokenType: "refresh" });
-  }
-
-  issueTokenPair(input: {
+  issueSessionPair(input: {
     ownerAddress: string;
     agentId: string;
     accessTtlSeconds: number;
     refreshTtlSeconds: number;
-  }): { accessToken: string; refreshToken: string } {
+  }): SessionPair {
+    const accessToken = this.signToken({
+      ownerAddress: input.ownerAddress,
+      agentId: input.agentId,
+      ttlSeconds: input.accessTtlSeconds,
+      tokenType: "access"
+    });
+
+    const refreshJti = randomBytes(16).toString("hex");
+    const refreshToken = this.signToken({
+      ownerAddress: input.ownerAddress,
+      agentId: input.agentId,
+      ttlSeconds: input.refreshTtlSeconds,
+      tokenType: "refresh",
+      jti: refreshJti
+    });
+
+    const refreshExpiresAt = Date.now() + input.refreshTtlSeconds * 1000;
+    this.refreshTokens.set(refreshJti, {
+      ownerAddress: input.ownerAddress.toLowerCase(),
+      agentId: input.agentId,
+      expiresAt: refreshExpiresAt
+    });
+    this.gc();
+
     return {
-      accessToken: this.signAccessSession({
-        ownerAddress: input.ownerAddress,
-        agentId: input.agentId,
-        ttlSeconds: input.accessTtlSeconds
-      }),
-      refreshToken: this.signRefreshSession({
-        ownerAddress: input.ownerAddress,
-        agentId: input.agentId,
-        ttlSeconds: input.refreshTtlSeconds
-      })
+      accessToken,
+      refreshToken,
+      accessExpiresAt: new Date(Date.now() + input.accessTtlSeconds * 1000).toISOString(),
+      refreshExpiresAt: new Date(refreshExpiresAt).toISOString()
     };
   }
 
-  rotateRefreshToken(input: {
-    refreshToken: string;
-    accessTtlSeconds: number;
-    refreshTtlSeconds: number;
-  }): { accessToken: string; refreshToken: string; claims: SessionClaims } | null {
-    const refreshClaims = this.verifyToken(input.refreshToken, "refresh");
-    if (!refreshClaims) return null;
-    this.revokedRefreshJti.add(refreshClaims.jti);
-    const nextPair = this.issueTokenPair({
-      ownerAddress: refreshClaims.ownerAddress,
-      agentId: refreshClaims.agentId,
+  refreshSession(
+    refreshToken: string,
+    input: { accessTtlSeconds: number; refreshTtlSeconds: number }
+  ): SessionPair | null {
+    const claims = this.verifyToken(refreshToken, "refresh");
+    if (!claims?.jti) return null;
+
+    const stored = this.refreshTokens.get(claims.jti);
+    if (!stored) return null;
+    if (stored.expiresAt <= Date.now()) {
+      this.refreshTokens.delete(claims.jti);
+      return null;
+    }
+
+    if (
+      stored.ownerAddress !== claims.ownerAddress.toLowerCase() ||
+      stored.agentId !== claims.agentId
+    ) {
+      this.refreshTokens.delete(claims.jti);
+      return null;
+    }
+
+    this.refreshTokens.delete(claims.jti);
+    return this.issueSessionPair({
+      ownerAddress: claims.ownerAddress,
+      agentId: claims.agentId,
       accessTtlSeconds: input.accessTtlSeconds,
       refreshTtlSeconds: input.refreshTtlSeconds
     });
-    return { ...nextPair, claims: refreshClaims };
   }
 
   verifySession(token: string): SessionClaims | null {
     return this.verifyToken(token, "access");
   }
 
-  verifyAccessSession(token: string): SessionClaims | null {
-    return this.verifyToken(token, "access");
-  }
-
-  verifyRefreshSession(token: string): SessionClaims | null {
-    return this.verifyToken(token, "refresh");
-  }
-
-  private signToken(input: {
-    ownerAddress: string;
-    agentId: string;
-    ttlSeconds: number;
-    tokenType: "access" | "refresh";
-  }): string {
+  verifyToken(token: string, expectedType?: "access" | "refresh"): SessionClaims | null {
     const now = Math.floor(Date.now() / 1000);
-    const claims: SessionClaims = {
-      sub: input.ownerAddress.toLowerCase(),
-      agentId: input.agentId,
-      ownerAddress: input.ownerAddress.toLowerCase(),
-      authMode: "passport",
-      tokenType: input.tokenType,
-      jti: randomBytes(16).toString("hex"),
-      iat: now,
-      exp: now + input.ttlSeconds
-    };
-
-    const header = { alg: "HS256", typ: "JWT" };
-    const encodedHeader = base64UrlEncode(JSON.stringify(header));
-    const encodedPayload = base64UrlEncode(JSON.stringify(claims));
-    const signature = this.sign(`${encodedHeader}.${encodedPayload}`);
-    return `${encodedHeader}.${encodedPayload}.${signature}`;
-  }
-
-  private verifyToken(token: string, expectedType: "access" | "refresh"): SessionClaims | null {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
     const [header, payload, signature] = parts;
@@ -193,16 +187,52 @@ export class SessionAuth {
     if (signature !== expected) return null;
 
     try {
-      const parsed = JSON.parse(base64UrlDecode(payload)) as SessionClaims;
+      const parsed = JSON.parse(base64UrlDecode(payload)) as Partial<SessionClaims>;
+      const tokenType = parsed.tokenType ?? "access";
       if (!parsed.exp || parsed.exp <= Math.floor(Date.now() / 1000)) return null;
       if (!parsed.ownerAddress || !parsed.agentId) return null;
-      if (!parsed.tokenType || parsed.tokenType !== expectedType) return null;
-      if (!parsed.jti || parsed.jti.length === 0) return null;
-      if (expectedType === "refresh" && this.revokedRefreshJti.has(parsed.jti)) return null;
-      return parsed;
+      if (expectedType && tokenType !== expectedType) return null;
+      if (tokenType === "refresh" && (!parsed.jti || parsed.jti.length === 0)) return null;
+
+      return {
+        sub: parsed.sub ?? parsed.ownerAddress,
+        agentId: parsed.agentId,
+        ownerAddress: parsed.ownerAddress,
+        authMode: "passport",
+        tokenType,
+        iat: parsed.iat ?? now,
+        exp: parsed.exp,
+        jti: parsed.jti
+      };
     } catch {
       return null;
     }
+  }
+
+  private signToken(input: {
+    ownerAddress: string;
+    agentId: string;
+    ttlSeconds: number;
+    tokenType: "access" | "refresh";
+    jti?: string;
+  }): string {
+    const now = Math.floor(Date.now() / 1000);
+    const claims: SessionClaims = {
+      sub: input.ownerAddress,
+      agentId: input.agentId,
+      ownerAddress: input.ownerAddress.toLowerCase(),
+      authMode: "passport",
+      tokenType: input.tokenType,
+      iat: now,
+      exp: now + input.ttlSeconds,
+      ...(input.jti ? { jti: input.jti } : {})
+    };
+
+    const header = { alg: "HS256", typ: "JWT" };
+    const encodedHeader = base64UrlEncode(JSON.stringify(header));
+    const encodedPayload = base64UrlEncode(JSON.stringify(claims));
+    const signature = this.sign(`${encodedHeader}.${encodedPayload}`);
+    return `${encodedHeader}.${encodedPayload}.${signature}`;
   }
 
   private sign(value: string): string {
@@ -214,6 +244,11 @@ export class SessionAuth {
     for (const [id, challenge] of this.challenges.entries()) {
       if (challenge.expiresAt <= now) {
         this.challenges.delete(id);
+      }
+    }
+    for (const [jti, token] of this.refreshTokens.entries()) {
+      if (token.expiresAt <= now) {
+        this.refreshTokens.delete(jti);
       }
     }
   }

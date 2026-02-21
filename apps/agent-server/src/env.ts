@@ -6,12 +6,15 @@ export interface AgentServerEnv {
   authTokenSecret: string;
   authChallengeTtlMs: number;
   authSessionTtlSeconds: number;
+  authRefreshTtlSeconds: number;
   budgetResetTimeZone: string;
   kiteFacilitatorUrl: string;
+  kitePaymentMode: "facilitator" | "demo";
   kiteNetwork: string;
   kiteTestUsdtAddress: string;
   kitePaymentAssetDecimals: number;
   kiteServicePayTo: string;
+  allowServerSigning: boolean;
   agentPrivateKey: string;
   executionChainId: number;
   executionRpcUrl: string;
@@ -20,15 +23,9 @@ export interface AgentServerEnv {
   kiteRpcUrl: string;
   uniswapApiKey: string;
   registryAddress: string;
-  paymentMode: "facilitator" | "demo";
-  facilitatorMode: "real" | "demo";
-  x402Scheme: "gokite-aa";
-  x402Version: 1;
   quicknodeSecurityToken: string;
   monadUsdcAddress: string;
   monadUsdtAddress: string;
-  authRefreshTtlSeconds: number;
-  allowServerSigning: boolean;
 }
 
 function readNumber(value: string | undefined, fallback: number): number {
@@ -37,11 +34,40 @@ function readNumber(value: string | undefined, fallback: number): number {
 }
 
 function readBoolean(value: string | undefined, fallback = false): boolean {
-  if (!value) return fallback;
+  if (value === undefined) return fallback;
   const normalized = value.trim().toLowerCase();
   if (["1", "true", "yes", "on"].includes(normalized)) return true;
   if (["0", "false", "no", "off"].includes(normalized)) return false;
   return fallback;
+}
+
+function readPaymentMode(
+  explicitMode: string | undefined,
+  deprecatedMode: string | undefined
+): "facilitator" | "demo" {
+  if (explicitMode) {
+    const normalized = explicitMode.trim().toLowerCase();
+    if (normalized === "facilitator" || normalized === "demo") return normalized;
+    throw new Error(
+      `Invalid KITE_PAYMENT_MODE '${explicitMode}'. Expected 'facilitator' or 'demo'.`
+    );
+  }
+
+  if (deprecatedMode) {
+    const normalized = deprecatedMode.trim().toLowerCase();
+    if (normalized === "real") {
+      console.warn(
+        "[env] FACILITATOR_MODE=real is deprecated. Use KITE_PAYMENT_MODE=facilitator."
+      );
+      return "facilitator";
+    }
+    if (normalized === "demo") {
+      console.warn("[env] FACILITATOR_MODE is deprecated. Use KITE_PAYMENT_MODE=demo.");
+      return "demo";
+    }
+  }
+
+  return "facilitator";
 }
 
 export function loadEnv(): AgentServerEnv {
@@ -55,30 +81,6 @@ export function loadEnv(): AgentServerEnv {
     10143
   );
 
-  const paymentModeEnv = process.env.KITE_PAYMENT_MODE?.trim().toLowerCase();
-  const legacyFacilitatorMode = process.env.FACILITATOR_MODE?.trim().toLowerCase();
-  const paymentMode = (() => {
-    if (paymentModeEnv === "facilitator" || paymentModeEnv === "demo") {
-      return paymentModeEnv;
-    }
-    if (paymentModeEnv && paymentModeEnv.length > 0) {
-      throw new Error(
-        `Invalid KITE_PAYMENT_MODE="${process.env.KITE_PAYMENT_MODE}". Expected "facilitator" or "demo".`
-      );
-    }
-    if (legacyFacilitatorMode === "demo") {
-      // eslint-disable-next-line no-console
-      console.warn("[env] FACILITATOR_MODE is deprecated. Use KITE_PAYMENT_MODE.");
-      return "demo";
-    }
-    if (legacyFacilitatorMode === "real") {
-      // eslint-disable-next-line no-console
-      console.warn("[env] FACILITATOR_MODE is deprecated. Use KITE_PAYMENT_MODE.");
-      return "facilitator";
-    }
-    return "facilitator";
-  })();
-
   return {
     port: readNumber(process.env.PORT, 3001),
     dashboardUrl: process.env.DASHBOARD_URL ?? "http://localhost:3000",
@@ -90,9 +92,14 @@ export function loadEnv(): AgentServerEnv {
       process.env.AGENT_PRIVATE_KEY ??
       "synoptic-prod-secret",
     authChallengeTtlMs: readNumber(process.env.AUTH_CHALLENGE_TTL_MS, 5 * 60_000),
-    authSessionTtlSeconds: readNumber(process.env.AUTH_SESSION_TTL_SECONDS, 60 * 60),
+    authSessionTtlSeconds: readNumber(process.env.AUTH_SESSION_TTL_SECONDS, 15 * 60),
+    authRefreshTtlSeconds: readNumber(process.env.AUTH_REFRESH_TTL_SECONDS, 7 * 24 * 60 * 60),
     budgetResetTimeZone: process.env.BUDGET_RESET_TIMEZONE ?? "UTC",
     kiteFacilitatorUrl: process.env.KITE_FACILITATOR_URL ?? "https://facilitator.pieverse.io",
+    kitePaymentMode: readPaymentMode(
+      process.env.KITE_PAYMENT_MODE,
+      process.env.FACILITATOR_MODE
+    ),
     kiteNetwork: process.env.KITE_NETWORK ?? "kite-testnet",
     kiteTestUsdtAddress:
       process.env.KITE_TEST_USDT_ADDRESS ?? "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
@@ -104,6 +111,7 @@ export function loadEnv(): AgentServerEnv {
       process.env.KITE_SERVICE_PAYTO ??
       process.env.KITE_FACILITATOR_ADDRESS ??
       "0x66ad7ef70cc88e37fa692d85c8a55ed4c1493251",
+    allowServerSigning: readBoolean(process.env.ALLOW_SERVER_SIGNING, false),
     agentPrivateKey: process.env.AGENT_PRIVATE_KEY ?? "",
     executionChainId,
     executionRpcUrl,
@@ -118,10 +126,6 @@ export function loadEnv(): AgentServerEnv {
     uniswapApiKey: process.env.UNISWAP_API_KEY ?? "",
     registryAddress:
       process.env.SERVICE_REGISTRY_ADDRESS ?? process.env.TRADE_REGISTRY_ADDRESS ?? "",
-    paymentMode,
-    facilitatorMode: paymentMode === "demo" ? "demo" : "real",
-    x402Scheme: "gokite-aa",
-    x402Version: 1,
     quicknodeSecurityToken:
       process.env.QUICKNODE_SECURITY_TOKEN ??
       process.env.QUICKNODE_STREAM_SECURITY_TOKEN ??
@@ -129,8 +133,6 @@ export function loadEnv(): AgentServerEnv {
       "",
     monadUsdcAddress:
       process.env.MONAD_USDC_ADDRESS ?? "0x62534e4bbd6d9ebac0ac99aeaa0aa48e56372df0",
-    monadUsdtAddress: process.env.MONAD_USDT_ADDRESS ?? "",
-    authRefreshTtlSeconds: readNumber(process.env.AUTH_REFRESH_TTL_SECONDS, 7 * 24 * 60 * 60),
-    allowServerSigning: readBoolean(process.env.ALLOW_SERVER_SIGNING, false)
+    monadUsdtAddress: process.env.MONAD_USDT_ADDRESS ?? ""
   };
 }

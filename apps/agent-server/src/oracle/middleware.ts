@@ -7,8 +7,7 @@ import type { RuntimeStoreContract } from "../state/runtime-store.js";
 const DEFAULT_PAYMENT_USD = 0.25;
 const DEFAULT_PAYMENT_ASSET_DECIMALS = 6;
 const DEFAULT_SERVICE_URL = "/oracle/price";
-const LEGACY_KITE_SCHEME = "gokite-aa";
-const FACILITATOR_SCHEME = "exact";
+const CANONICAL_SCHEME = "gokite-aa";
 
 interface OraclePaymentDeps {
   store: RuntimeStoreContract;
@@ -146,21 +145,16 @@ function summarizeXPayment(value: string): Record<string, unknown> {
 }
 
 function normalizeFacilitatorNetwork(value: string): string {
-  const raw = value.trim();
-  if (raw === "kite-testnet") return "eip155:2368";
-  if (raw === "kite") return "eip155:2366";
-  return raw;
+  return value.trim() || "kite-testnet";
 }
 
 function normalizeFacilitatorScheme(value: string): string {
-  const raw = value.trim();
-  if (!raw) return FACILITATOR_SCHEME;
-  if (raw === LEGACY_KITE_SCHEME) return FACILITATOR_SCHEME;
-  return raw;
+  return value.trim() || CANONICAL_SCHEME;
 }
 
 function facilitatorVersionForNetwork(network: string): number {
-  return network.startsWith("eip155:") ? 2 : 1;
+  void network;
+  return 1;
 }
 
 function buildFacilitatorRequirements(input: {
@@ -171,7 +165,7 @@ function buildFacilitatorRequirements(input: {
   deps: OraclePaymentDeps;
 }): Record<string, unknown> {
   const network = normalizeFacilitatorNetwork(input.deps.network);
-  const scheme = FACILITATOR_SCHEME;
+  const scheme = CANONICAL_SCHEME;
   const x402Version = facilitatorVersionForNetwork(network);
   return {
     x402Version,
@@ -205,8 +199,8 @@ function normalizePaymentRequirements(
   fallback: Record<string, unknown>
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...source };
-  const fallbackScheme = readString(fallback, "scheme") ?? FACILITATOR_SCHEME;
-  const fallbackNetwork = readString(fallback, "network") ?? "eip155:2368";
+  const fallbackScheme = readString(fallback, "scheme") ?? CANONICAL_SCHEME;
+  const fallbackNetwork = readString(fallback, "network") ?? "kite-testnet";
 
   const sourceAccepts = Array.isArray(source.accepts)
     ? (source.accepts as unknown[])
@@ -350,6 +344,10 @@ export function dayBucket(value: string, timeZone: string): string {
 }
 
 function decodeAgentIdFromAuth(request: FastifyRequest): string | undefined {
+  if (request.authClaims?.agentId) {
+    return request.authClaims.agentId;
+  }
+
   const auth = request.headers.authorization;
   if (!auth || !auth.startsWith("Bearer ")) return undefined;
   const token = auth.slice("Bearer ".length).trim();
@@ -524,7 +522,7 @@ export async function requireX402PaymentForResource(
     });
 
     const network = normalizeFacilitatorNetwork(deps.network);
-    const scheme = FACILITATOR_SCHEME;
+    const scheme = CANONICAL_SCHEME;
     const x402Version = facilitatorVersionForNetwork(network);
     const challenge = {
       x402Version,

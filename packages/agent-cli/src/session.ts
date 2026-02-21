@@ -1,52 +1,64 @@
-import { existsSync, readFileSync, writeFileSync, chmodSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "fs";
+import { join } from "path";
+import { z } from "zod";
+import { ensureSynopticDir, getSynopticDirPath } from "./wallet.js";
 
-export interface AgentSession {
-  accessToken: string;
-  refreshToken: string;
-  accessExpiresAt: string;
-  refreshExpiresAt: string;
-  agentId: string;
-  ownerAddress: string;
-  linkedPayerAddress?: string;
-  readiness?: {
-    wallet: "ok" | "missing";
-    auth: "ok" | "missing";
-    identity: "linked" | "warning";
-    lastError?: string;
-  };
+const SessionSchema = z.object({
+  version: z.literal(1),
+  accessToken: z.string().min(1),
+  refreshToken: z.string().min(1),
+  accessExpiresAt: z.string().datetime(),
+  refreshExpiresAt: z.string().datetime(),
+  agentId: z.string().min(1),
+  ownerAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+  linkedPayerAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+  readiness: z.object({
+    walletReady: z.boolean(),
+    mcpReady: z.boolean(),
+    identityLinked: z.boolean(),
+    checkedAt: z.string().datetime(),
+    lastError: z.string().optional()
+  }),
+  updatedAt: z.string().datetime()
+});
+
+export type SessionData = z.infer<typeof SessionSchema>;
+
+function getSessionFilePath(): string {
+  return join(getSynopticDirPath(), "session.json");
 }
 
-function getSynopticDir(): string {
-  return process.env.SYNOPTIC_HOME || join(homedir(), ".synoptic");
+export function getSessionPath(): string {
+  return getSessionFilePath();
 }
 
-function getSessionPath(): string {
-  return join(getSynopticDir(), "session.json");
-}
-
-export function loadSession(): AgentSession | null {
-  const path = getSessionPath();
+export function loadSession(): SessionData | null {
+  const path = getSessionFilePath();
   if (!existsSync(path)) return null;
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf-8")) as AgentSession;
-    if (!parsed.accessToken || !parsed.refreshToken) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+
+  const raw = readFileSync(path, "utf-8");
+  const parsed = JSON.parse(raw) as unknown;
+  return SessionSchema.parse(parsed);
 }
 
-export function saveSession(session: AgentSession): void {
-  const dir = getSynopticDir();
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const path = getSessionPath();
-  writeFileSync(path, JSON.stringify(session, null, 2), { mode: 0o600 });
+export function saveSession(input: Omit<SessionData, "version" | "updatedAt">): SessionData {
+  ensureSynopticDir();
+  const path = getSessionFilePath();
+
+  const data: SessionData = SessionSchema.parse({
+    version: 1,
+    ...input,
+    updatedAt: new Date().toISOString()
+  });
+
+  writeFileSync(path, JSON.stringify(data, null, 2), { mode: 0o600 });
   chmodSync(path, 0o600);
+  return data;
 }
 
-export function getSessionPathForDisplay(): string {
-  return getSessionPath();
+export function clearSession(): boolean {
+  const path = getSessionFilePath();
+  if (!existsSync(path)) return false;
+  unlinkSync(path);
+  return true;
 }
-

@@ -1,7 +1,7 @@
 import type { Config } from "./types.js";
 import { KITE_MCP_SETUP_INSTRUCTIONS, type KiteMcpClient } from "./kite-mcp.js";
+import { loadSession, saveSession, type SessionData } from "./session.js";
 import logger from "./logger.js";
-import { loadSession, saveSession, type AgentSession } from "./session.js";
 
 interface RequestOptions {
   method?: "GET" | "POST";
@@ -29,82 +29,31 @@ interface X402ChallengeBody {
   }>;
 }
 
+interface SessionRefreshResponse {
+  accessToken?: string;
+  refreshToken?: string;
+  token?: string;
+  expiresAt?: string;
+  refreshExpiresAt?: string;
+}
+
+interface ApiClientOptions {
+  useSession?: boolean;
+}
+
 export class ApiClient {
   private readonly baseUrl: string;
   private readonly maxRetries: number;
   private readonly backoffMs: number;
   private readonly mcpClient: KiteMcpClient | null;
+  private readonly useSession: boolean;
 
-  constructor(config: Config, mcpClient?: KiteMcpClient | null) {
+  constructor(config: Config, mcpClient?: KiteMcpClient | null, options: ApiClientOptions = {}) {
     this.baseUrl = config.apiUrl;
     this.maxRetries = config.maxRetries;
     this.backoffMs = config.backoffMs;
     this.mcpClient = mcpClient ?? null;
-  }
-
-  private readBearerToken(headers: Record<string, string>): string | undefined {
-    const existing = headers.authorization ?? headers.Authorization;
-    if (existing) return existing;
-    const session = loadSession();
-    if (!session?.accessToken) return undefined;
-    return `Bearer ${session.accessToken}`;
-  }
-
-  private upsertSession(input: {
-    accessToken: string;
-    refreshToken: string;
-    accessTtlSeconds: number;
-    refreshTtlSeconds: number;
-    agentId: string;
-    ownerAddress: string;
-  }): void {
-    const existing = loadSession();
-    const now = Date.now();
-    const session: AgentSession = {
-      accessToken: input.accessToken,
-      refreshToken: input.refreshToken,
-      accessExpiresAt: new Date(now + input.accessTtlSeconds * 1000).toISOString(),
-      refreshExpiresAt: new Date(now + input.refreshTtlSeconds * 1000).toISOString(),
-      agentId: input.agentId,
-      ownerAddress: input.ownerAddress,
-      linkedPayerAddress: existing?.linkedPayerAddress,
-      readiness: existing?.readiness
-    };
-    saveSession(session);
-  }
-
-  private async refreshFromSession(): Promise<boolean> {
-    const session = loadSession();
-    if (!session?.refreshToken) return false;
-    try {
-      const refreshed = await this.request<{
-        code: "OK";
-        data: {
-          accessToken: string;
-          refreshToken: string;
-          accessTtlSeconds: number;
-          refreshTtlSeconds: number;
-          agentId: string;
-          ownerAddress: string;
-        };
-      }>("/api/auth/session", {
-        method: "POST",
-        body: { refreshToken: session.refreshToken },
-        maxRetries: 0
-      });
-      const payload = this.unwrapEnvelope<{
-        accessToken: string;
-        refreshToken: string;
-        accessTtlSeconds: number;
-        refreshTtlSeconds: number;
-        agentId: string;
-        ownerAddress: string;
-      }>(refreshed);
-      this.upsertSession(payload);
-      return true;
-    } catch {
-      return false;
-    }
+    this.useSession = options.useSession ?? false;
   }
 
   private async sleep(ms: number): Promise<void> {
@@ -137,15 +86,63 @@ export class ApiClient {
     return body as T;
   }
 
-  async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-    return this.requestWithRefresh(path, options, false);
+  private readSessionSafe(): SessionData | null {
+    if (!this.useSession) return null;
+    try {
+      return loadSession();
+    } catch {
+      return null;
+    }
   }
 
-  private async requestWithRefresh<T>(
-    path: string,
-    options: RequestOptions = {},
-    didRefresh: boolean
-  ): Promise<T> {
+  private persistSessionRefresh(
+    current: SessionData,
+    payload: SessionRefreshResponse
+  ): string | null {
+    const accessToken = payload.accessToken ?? payload.token;
+    if (!accessToken) return null;
+
+    const next = saveSession({
+      accessToken,
+      refreshToken: payload.refreshToken ?? current.refreshToken,
+      accessExpiresAt: payload.expiresAt ?? current.accessExpiresAt,
+      refreshExpiresAt: payload.refreshExpiresAt ?? current.refreshExpiresAt,
+      agentId: current.agentId,
+      ownerAddress: current.ownerAddress,
+      linkedPayerAddress: current.linkedPayerAddress,
+      readiness: current.readiness
+    });
+
+    return next.accessToken;
+  }
+
+  private async refreshAccessToken(current: SessionData): Promise<string | null> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/auth/session`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ refreshToken: current.refreshToken })
+      });
+
+      if (!response.ok) {
+        logger.warn("Session refresh failed", { status: response.status });
+        return null;
+      }
+
+      const payload = this.unwrapEnvelope<SessionRefreshResponse>(
+        (await response.json()) as unknown
+      );
+
+      return this.persistSessionRefresh(current, payload);
+    } catch (error) {
+      logger.warn("Session refresh request failed", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return null;
+    }
+  }
+
+  async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const { method = "GET", body, headers = {}, maxRetries, backoffMs } = options;
     const retries = maxRetries ?? this.maxRetries;
     const backoff = backoffMs ?? this.backoffMs;
@@ -155,15 +152,36 @@ export class ApiClient {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const url = `${this.baseUrl}${path}`;
-        const response = await fetch(url, {
+        const requestHeaders: Record<string, string> = {
+          "content-type": "application/json",
+          ...headers
+        };
+
+        const session = this.readSessionSafe();
+        if (session?.accessToken && !requestHeaders.authorization) {
+          requestHeaders.authorization = `Bearer ${session.accessToken}`;
+        }
+
+        let response = await fetch(url, {
           method,
-          headers: {
-            "content-type": "application/json",
-            ...(this.readBearerToken(headers) ? { authorization: this.readBearerToken(headers)! } : {}),
-            ...headers
-          },
+          headers: requestHeaders,
           body: body ? JSON.stringify(body) : undefined
         });
+
+        if (response.status === 401 && this.useSession && session && path !== "/api/auth/session") {
+          const refreshed = await this.refreshAccessToken(session);
+          if (refreshed) {
+            const retryHeaders = {
+              ...requestHeaders,
+              authorization: `Bearer ${refreshed}`
+            };
+            response = await fetch(url, {
+              method,
+              headers: retryHeaders,
+              body: body ? JSON.stringify(body) : undefined
+            });
+          }
+        }
 
         if (response.status === 402) {
           const challengeBody = await response.json().catch(() => null);
@@ -183,12 +201,7 @@ export class ApiClient {
             paymentRequestId: challenge.paymentRequestId
           });
 
-          // Resolve payer address via MCP
           const payerAddr = await this.mcpClient.getPayerAddr();
-
-          logger.info("Got payer address", { payerAddr });
-
-          // Approve payment via MCP
           const { paymentToken } = await this.mcpClient.approvePayment({
             payerAddr,
             payeeAddr: challenge.payTo,
@@ -197,14 +210,10 @@ export class ApiClient {
             merchantName: challenge.accepts[0]?.merchantName ?? "Synoptic Oracle"
           });
 
-          logger.info("Payment approved, retrying with token");
-
-          // Retry the original request with payment credentials
           const retryResponse = await fetch(url, {
             method,
             headers: {
-              "content-type": "application/json",
-              ...headers,
+              ...requestHeaders,
               "x-payment": paymentToken,
               "x-payment-request-id": challenge.paymentRequestId
             },
@@ -229,13 +238,6 @@ export class ApiClient {
           continue;
         }
 
-        if (response.status === 401 && !didRefresh) {
-          const refreshed = await this.refreshFromSession();
-          if (refreshed) {
-            return this.requestWithRefresh(path, options, true);
-          }
-        }
-
         if (!response.ok) {
           const text = await response.text();
           throw new Error(`HTTP ${response.status}: ${text}`);
@@ -245,7 +247,6 @@ export class ApiClient {
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
 
-        // Don't retry MCP configuration errors
         if (lastError.message.includes("Kite MCP not configured")) {
           throw lastError;
         }
@@ -265,71 +266,6 @@ export class ApiClient {
     throw lastError ?? new Error("Request failed after retries");
   }
 
-  async walletChallenge(params: {
-    ownerAddress: string;
-    agentId?: string;
-  }): Promise<{
-    challengeId: string;
-    message: string;
-    expiresAt: string;
-    ownerAddress: string;
-    agentId: string;
-  }> {
-    const raw = await this.request<unknown>("/api/auth/wallet/challenge", {
-      method: "POST",
-      body: params
-    });
-    return this.unwrapEnvelope<{
-      challengeId: string;
-      message: string;
-      expiresAt: string;
-      ownerAddress: string;
-      agentId: string;
-    }>(raw);
-  }
-
-  async walletVerify(params: {
-    challengeId: string;
-    message: string;
-    signature: string;
-  }): Promise<{
-    accessToken: string;
-    refreshToken: string;
-    accessTtlSeconds: number;
-    refreshTtlSeconds: number;
-    agentId: string;
-    ownerAddress: string;
-  }> {
-    const raw = await this.request<unknown>("/api/auth/wallet/verify", {
-      method: "POST",
-      body: params
-    });
-    return this.unwrapEnvelope<{
-      accessToken: string;
-      refreshToken: string;
-      accessTtlSeconds: number;
-      refreshTtlSeconds: number;
-      agentId: string;
-      ownerAddress: string;
-    }>(raw);
-  }
-
-  async linkIdentityPayer(payerAddress: string): Promise<{
-    linkedPayerAddress: string;
-    ownerAddress: string;
-    agentId: string;
-  }> {
-    const raw = await this.request<unknown>("/api/identity/link", {
-      method: "POST",
-      body: { payerAddress }
-    });
-    return this.unwrapEnvelope<{
-      linkedPayerAddress: string;
-      ownerAddress: string;
-      agentId: string;
-    }>(raw);
-  }
-
   async getPrice(pair: string): Promise<{ price: number; timestamp: string }> {
     return this.request<{ price: number; timestamp: string }>(
       `/oracle/price?pair=${encodeURIComponent(pair)}`
@@ -341,13 +277,17 @@ export class ApiClient {
     service: string;
     timestamp: string;
     dependencies: Record<string, string>;
+    payment?: {
+      mode: "facilitator" | "demo";
+      configured: boolean;
+      verifyReachable: "up" | "down" | "unknown";
+      settleReachable: "up" | "down" | "unknown";
+      lastCheckedAt?: string;
+      latencyMs?: number;
+      lastError?: string;
+    };
   }> {
-    return this.request<{
-      status: string;
-      service: string;
-      timestamp: string;
-      dependencies: Record<string, string>;
-    }>("/health");
+    return this.request("/health");
   }
 
   async getAgents(): Promise<{
@@ -428,19 +368,7 @@ export class ApiClient {
     }>;
   }> {
     const raw = await this.request<unknown>("/api/trades");
-    return this.unwrapEnvelope<{
-      trades: Array<{
-        id: string;
-        status: string;
-        tokenIn: string;
-        tokenOut: string;
-        amountIn: string;
-        amountOut: string;
-        executionTxHash?: string;
-        kiteAttestationTx?: string;
-        createdAt: string;
-      }>;
-    }>(raw);
+    return this.unwrapEnvelope(raw);
   }
 
   async getPayments(): Promise<{
@@ -453,18 +381,69 @@ export class ApiClient {
     }>;
   }> {
     const raw = await this.request<unknown>("/api/payments");
-    return this.unwrapEnvelope<{
-      payments: Array<{
-        id: string;
-        status: string;
-        amount: string;
-        txHash?: string;
-        createdAt: string;
-      }>;
-    }>(raw);
+    return this.unwrapEnvelope(raw);
+  }
+
+  async createWalletChallenge(input: {
+    ownerAddress: string;
+    agentId?: string;
+  }): Promise<{
+    challengeId: string;
+    message: string;
+    ownerAddress: string;
+    agentId: string;
+    expiresAt: string;
+  }> {
+    return this.request("/api/auth/wallet/challenge", {
+      method: "POST",
+      body: input
+    });
+  }
+
+  async verifyWalletChallenge(input: {
+    challengeId: string;
+    message: string;
+    signature: string;
+    ownerAddress?: string;
+    agentId?: string;
+  }): Promise<{
+    accessToken?: string;
+    refreshToken: string;
+    token?: string;
+    expiresAt: string;
+    refreshExpiresAt: string;
+    agentId: string;
+    ownerAddress: string;
+  }> {
+    return this.request("/api/auth/wallet/verify", {
+      method: "POST",
+      body: input
+    });
+  }
+
+  async linkIdentity(payerAddress: string): Promise<{ linked: boolean; agentId: string }> {
+    return this.request("/api/identity/link", {
+      method: "POST",
+      body: { payerAddress }
+    });
+  }
+
+  async getIdentity(): Promise<{
+    agentId: string;
+    ownerAddress: string;
+    payerAddress?: string;
+    linked: boolean;
+    linkedAt?: string;
+    updatedAt?: string;
+  }> {
+    return this.request("/api/identity");
   }
 }
 
-export function createApiClient(config: Config, mcpClient?: KiteMcpClient | null): ApiClient {
-  return new ApiClient(config, mcpClient);
+export function createApiClient(
+  config: Config,
+  mcpClient?: KiteMcpClient | null,
+  options: ApiClientOptions = {}
+): ApiClient {
+  return new ApiClient(config, mcpClient, options);
 }

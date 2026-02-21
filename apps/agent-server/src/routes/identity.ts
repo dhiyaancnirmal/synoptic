@@ -1,89 +1,155 @@
 import type { FastifyInstance } from "fastify";
-import { fail, ok } from "../http/envelope.js";
 import type { RuntimeStoreContract } from "../state/runtime-store.js";
+import { SessionAuth } from "../auth/session.js";
 
-function isAddress(value: string): boolean {
-  return /^0x[a-fA-F0-9]{40}$/.test(value);
+interface RegisterIdentityRoutesDeps {
+  store: RuntimeStoreContract;
+  sessionAuth: SessionAuth;
 }
 
-function normalizeIdentityConfig(strategyConfig?: Record<string, unknown>) {
+const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+const PLACEHOLDER_OWNER = "0x0000000000000000000000000000000000000001";
+
+interface AgentIdentityState {
+  ownerAddress: string;
+  payerAddress?: string;
+  linkedAt?: string;
+  updatedAt?: string;
+}
+
+function readBearerToken(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  if (!raw.startsWith("Bearer ")) return "";
+  return raw.slice("Bearer ".length).trim();
+}
+
+function normalizeAddress(value: string): string {
+  return value.toLowerCase();
+}
+
+function isPlaceholderOwner(value: string | undefined): boolean {
+  if (!value) return false;
+  return normalizeAddress(value) === PLACEHOLDER_OWNER;
+}
+
+export function readIdentityState(strategyConfig: Record<string, unknown> | undefined): AgentIdentityState {
   const identity =
-    strategyConfig?.identity && typeof strategyConfig.identity === "object"
+    strategyConfig && typeof strategyConfig.identity === "object" && strategyConfig.identity
       ? (strategyConfig.identity as Record<string, unknown>)
       : {};
+
   return {
-    ownerAddress: typeof identity.ownerAddress === "string" ? identity.ownerAddress : undefined,
-    linkedPayerAddress:
-      typeof identity.linkedPayerAddress === "string" ? identity.linkedPayerAddress : undefined
+    ownerAddress:
+      typeof identity.ownerAddress === "string" ? identity.ownerAddress.toLowerCase() : "",
+    payerAddress:
+      typeof identity.payerAddress === "string" ? identity.payerAddress.toLowerCase() : undefined,
+    linkedAt: typeof identity.linkedAt === "string" ? identity.linkedAt : undefined,
+    updatedAt: typeof identity.updatedAt === "string" ? identity.updatedAt : undefined
   };
 }
 
 export async function registerIdentityRoutes(
   app: FastifyInstance,
-  store: RuntimeStoreContract
+  deps: RegisterIdentityRoutesDeps
 ): Promise<void> {
-  app.get("/api/identity", async (request, reply) => {
-    const claims = (request as { sessionClaims?: { ownerAddress: string; agentId: string } }).sessionClaims;
-    if (!claims) {
-      fail(request, reply, 401, "UNAUTHORIZED", "Valid bearer token required");
-      return;
-    }
-    const agent = await store.getAgent(claims.agentId);
-    if (!agent) {
-      fail(request, reply, 404, "NOT_FOUND", "Agent not found");
-      return;
-    }
-    const identity = normalizeIdentityConfig(agent.strategyConfig);
-    return ok(request, {
-      agentId: agent.id,
-      ownerAddress: agent.eoaAddress.toLowerCase(),
-      linkedPayerAddress: identity.linkedPayerAddress?.toLowerCase(),
-      payerLinked: Boolean(identity.linkedPayerAddress)
-    });
-  });
-
   app.post("/api/identity/link", async (request, reply) => {
-    const claims = (request as { sessionClaims?: { ownerAddress: string; agentId: string } }).sessionClaims;
+    const token = readBearerToken(request.headers.authorization);
+    const claims = deps.sessionAuth.verifySession(token);
     if (!claims) {
-      fail(request, reply, 401, "UNAUTHORIZED", "Valid bearer token required");
-      return;
-    }
-    const body = (request.body as { payerAddress?: string } | undefined) ?? {};
-    const payerAddress = body.payerAddress?.trim()?.toLowerCase();
-    if (!payerAddress || !isAddress(payerAddress)) {
-      fail(request, reply, 400, "INVALID_PAYER_ADDRESS", "Valid payerAddress is required");
-      return;
-    }
-    const agent = await store.getAgent(claims.agentId);
-    if (!agent) {
-      fail(request, reply, 404, "NOT_FOUND", "Agent not found");
-      return;
-    }
-    const ownerAddress = agent.eoaAddress.toLowerCase();
-    if (claims.ownerAddress.toLowerCase() !== ownerAddress) {
-      fail(request, reply, 403, "OWNER_MISMATCH", "Session owner does not match agent owner");
-      return;
+      return reply.status(401).send({
+        code: "UNAUTHORIZED",
+        message: "Valid bearer access token required",
+        requestId: request.id
+      });
     }
 
-    const strategyConfig = {
+    const body = (request.body as { payerAddress?: string } | undefined) ?? {};
+    const payerAddress = body.payerAddress?.trim();
+    if (!payerAddress || !EVM_ADDRESS_RE.test(payerAddress)) {
+      return reply.status(400).send({
+        code: "INVALID_PAYER_ADDRESS",
+        message: "Valid payerAddress is required",
+        requestId: request.id
+      });
+    }
+
+    const agent = await deps.store.getAgent(claims.agentId);
+    if (!agent) {
+      return reply.status(404).send({
+        code: "NO_AGENT",
+        message: "Agent does not exist",
+        requestId: request.id
+      });
+    }
+
+    const normalizedOwner = normalizeAddress(claims.ownerAddress);
+    if (
+      agent.eoaAddress &&
+      !isPlaceholderOwner(agent.eoaAddress) &&
+      normalizeAddress(agent.eoaAddress) !== normalizedOwner
+    ) {
+      return reply.status(403).send({
+        code: "OWNER_MISMATCH",
+        message: "Session owner does not match agent owner",
+        requestId: request.id
+      });
+    }
+
+    const existingIdentity = readIdentityState(agent.strategyConfig);
+    const normalizedPayer = normalizeAddress(payerAddress);
+    const now = new Date().toISOString();
+
+    const nextStrategyConfig: Record<string, unknown> = {
       ...(agent.strategyConfig ?? {}),
       identity: {
-        ownerAddress,
-        linkedPayerAddress: payerAddress
+        ownerAddress: normalizedOwner,
+        payerAddress: normalizedPayer,
+        linkedAt: existingIdentity.linkedAt ?? now,
+        updatedAt: now
       }
     };
-    const updated = await store.updateAgent(agent.id, { strategyConfig });
-    if (!updated) {
-      fail(request, reply, 500, "UPDATE_FAILED", "Failed to link identity");
-      return;
+
+    await deps.store.updateAgent(agent.id, {
+      eoaAddress: normalizedOwner,
+      strategyConfig: nextStrategyConfig
+    });
+
+    return {
+      linked: true,
+      agentId: agent.id,
+      identity: nextStrategyConfig.identity
+    };
+  });
+
+  app.get("/api/identity", async (request, reply) => {
+    const token = readBearerToken(request.headers.authorization);
+    const claims = deps.sessionAuth.verifySession(token);
+    if (!claims) {
+      return reply.status(401).send({
+        code: "UNAUTHORIZED",
+        message: "Valid bearer access token required",
+        requestId: request.id
+      });
     }
 
-    return ok(request, {
-      agentId: updated.id,
-      ownerAddress,
-      linkedPayerAddress: payerAddress,
-      payerLinked: true
-    });
+    const agent = await deps.store.getAgent(claims.agentId);
+    if (!agent) {
+      return reply.status(404).send({
+        code: "NO_AGENT",
+        message: "Agent does not exist",
+        requestId: request.id
+      });
+    }
+
+    const identity = readIdentityState(agent.strategyConfig);
+
+    return {
+      agentId: agent.id,
+      ownerAddress: claims.ownerAddress,
+      payerAddress: identity.payerAddress,
+      linked: Boolean(identity.ownerAddress && identity.payerAddress),
+      linkedAt: identity.linkedAt,
+      updatedAt: identity.updatedAt
+    };
   });
 }
-

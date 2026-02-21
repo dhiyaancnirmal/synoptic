@@ -56,3 +56,8 @@ Harness outputs:
 - Use QuickNode Streams (Monad) as primary data source for streamed blockchain insights.
 - Keep x402 payment mapping explicit for every paid action.
 
+## Operator Docs
+
+- Onboarding runbook: `/Users/dhiyaan/Code/synoptic/.worktrees/phase1-hardening/docs/onboarding-runbook.md`
+- Environment matrix: `/Users/dhiyaan/Code/synoptic/.worktrees/phase1-hardening/docs/env-matrix.md`
+- Troubleshooting auth/x402: `/Users/dhiyaan/Code/synoptic/.worktrees/phase1-hardening/docs/troubleshooting-auth-x402.md`
