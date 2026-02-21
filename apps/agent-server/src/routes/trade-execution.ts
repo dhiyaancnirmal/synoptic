@@ -1,9 +1,8 @@
 import type { FastifyInstance } from "fastify";
+import type { PaymentAdapter } from "@synoptic/agent-core";
 import type { RuntimeStoreContract } from "../state/runtime-store.js";
 import { WsHub } from "../ws/hub.js";
 import { RealTradingAdapter, RealAttestationAdapter, WMON, USDC_MONAD, MONAD_TESTNET_CHAIN_ID } from "@synoptic/agent-core";
-import { RealFacilitatorPaymentAdapter } from "../oracle/facilitator.js";
-import { DemoPaymentAdapter } from "../oracle/demo-facilitator.js";
 import { requireX402Payment } from "../oracle/middleware.js";
 import type { AgentServerEnv } from "../env.js";
 
@@ -11,7 +10,7 @@ interface TradeExecutionDeps {
   store: RuntimeStoreContract;
   wsHub: WsHub;
   env: AgentServerEnv;
-  facilitatorUrl: string;
+  paymentAdapter: PaymentAdapter;
   network: string;
   payToAddress: string;
   paymentAssetAddress: string;
@@ -45,18 +44,10 @@ export async function registerTradeExecutionRoutes(
   app: FastifyInstance,
   deps: TradeExecutionDeps
 ): Promise<void> {
-  const paymentAdapter =
-    deps.env.facilitatorMode === "demo"
-      ? new DemoPaymentAdapter()
-      : new RealFacilitatorPaymentAdapter({
-          baseUrl: deps.facilitatorUrl,
-          network: deps.network
-        });
-
   app.post("/trade/quote", async (request, reply) => {
     const allowed = await requireX402Payment(request, reply, {
       store: deps.store,
-      paymentAdapter,
+      paymentAdapter: deps.paymentAdapter,
       network: deps.network,
       payToAddress: deps.payToAddress,
       paymentAssetAddress: deps.paymentAssetAddress,
@@ -121,9 +112,16 @@ export async function registerTradeExecutionRoutes(
   });
 
   app.post("/trade/execute", async (request, reply) => {
+    if (!deps.env.allowServerSigning) {
+      return reply.status(403).send({
+        code: "SERVER_SIGNING_DISABLED",
+        message: "Server-side signing is disabled. Use client-signed flow."
+      });
+    }
+
     const allowed = await requireX402Payment(request, reply, {
       store: deps.store,
-      paymentAdapter,
+      paymentAdapter: deps.paymentAdapter,
       network: deps.network,
       payToAddress: deps.payToAddress,
       paymentAssetAddress: deps.paymentAssetAddress,

@@ -4,6 +4,7 @@ import { JsonRpcProvider, formatEther } from "ethers";
 import { loadWallet, getWalletPath, getLogsDir } from "../wallet.js";
 import { resolveConfig } from "../config.js";
 import { createApiClient } from "../api-client.js";
+import { getSessionPath, loadSession } from "../session.js";
 import { printHeader, printError, formatAddress } from "../utils/formatting.js";
 
 export async function statusCommand(): Promise<void> {
@@ -15,9 +16,10 @@ export async function statusCommand(): Promise<void> {
   if (!wallet) {
     spinner.fail("No wallet found");
     console.log("");
-    printError("Run `npx @synoptic/agent init` first");
+    printError("Run `npx @synoptic/agent setup` first");
     process.exit(1);
   }
+  const session = loadSession();
 
   spinner.succeed("Wallet loaded");
   console.log("");
@@ -25,6 +27,9 @@ export async function statusCommand(): Promise<void> {
   console.log(`  ${chalk.dim("Address:")} ${chalk.green(wallet.address)}`);
   console.log(`  ${chalk.dim("Created:")} ${wallet.createdAt}`);
   console.log(`  ${chalk.dim("Storage:")} ${getWalletPath()}`);
+  console.log(
+    `  ${chalk.dim("Session:")} ${session ? chalk.green(getSessionPath()) : chalk.yellow("missing")}`
+  );
   console.log("");
 
   console.log(chalk.bold("  Balances:"));
@@ -51,7 +56,7 @@ export async function statusCommand(): Promise<void> {
   console.log("");
 
   const config = resolveConfig();
-  const apiClient = createApiClient(config);
+  const apiClient = createApiClient(config, null, { useSession: true });
 
   console.log(chalk.bold("  API Status:"));
   console.log("");
@@ -62,8 +67,39 @@ export async function statusCommand(): Promise<void> {
     healthSpinner.succeed(`  Status: ${chalk.green(health.status)}`);
     console.log(`  ${chalk.dim("Service:")} ${health.service}`);
     console.log(`  ${chalk.dim("URL:")} ${config.apiUrl}`);
+    if (health.payment) {
+      console.log(
+        `  ${chalk.dim("Payment mode:")} ${health.payment.mode} (${health.payment.configured ? "configured" : "not configured"})`
+      );
+      console.log(
+        `  ${chalk.dim("Verify/Settle:")} ${health.payment.verifyReachable}/${health.payment.settleReachable}`
+      );
+      if (health.payment.lastCheckedAt) {
+        console.log(`  ${chalk.dim("Last probe:")} ${health.payment.lastCheckedAt}`);
+      }
+      if (health.payment.lastError) {
+        console.log(`  ${chalk.dim("Probe error:")} ${chalk.yellow(health.payment.lastError)}`);
+      }
+    }
   } catch {
     healthSpinner.fail("  API: Unable to connect");
+  }
+
+  if (session) {
+    console.log("");
+    console.log(chalk.bold("  Readiness:"));
+    console.log("");
+    console.log(`  ${chalk.dim("walletReady:")} ${session.readiness.walletReady ? "yes" : "no"}`);
+    console.log(`  ${chalk.dim("mcpReady:")} ${session.readiness.mcpReady ? "yes" : "no"}`);
+    console.log(
+      `  ${chalk.dim("identityLinked:")} ${session.readiness.identityLinked ? "yes" : "no"}`
+    );
+    if (session.linkedPayerAddress) {
+      console.log(`  ${chalk.dim("linkedPayer:")} ${session.linkedPayerAddress}`);
+    }
+    if (session.readiness.lastError) {
+      console.log(`  ${chalk.dim("readinessError:")} ${chalk.yellow(session.readiness.lastError)}`);
+    }
   }
 
   console.log("");

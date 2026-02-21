@@ -1,5 +1,6 @@
 import type { Config } from "./types.js";
 import { KITE_MCP_SETUP_INSTRUCTIONS, type KiteMcpClient } from "./kite-mcp.js";
+import { loadSession, saveSession, type SessionData } from "./session.js";
 import logger from "./logger.js";
 
 interface RequestOptions {
@@ -28,17 +29,31 @@ interface X402ChallengeBody {
   }>;
 }
 
+interface SessionRefreshResponse {
+  accessToken?: string;
+  refreshToken?: string;
+  token?: string;
+  expiresAt?: string;
+  refreshExpiresAt?: string;
+}
+
+interface ApiClientOptions {
+  useSession?: boolean;
+}
+
 export class ApiClient {
   private readonly baseUrl: string;
   private readonly maxRetries: number;
   private readonly backoffMs: number;
   private readonly mcpClient: KiteMcpClient | null;
+  private readonly useSession: boolean;
 
-  constructor(config: Config, mcpClient?: KiteMcpClient | null) {
+  constructor(config: Config, mcpClient?: KiteMcpClient | null, options: ApiClientOptions = {}) {
     this.baseUrl = config.apiUrl;
     this.maxRetries = config.maxRetries;
     this.backoffMs = config.backoffMs;
     this.mcpClient = mcpClient ?? null;
+    this.useSession = options.useSession ?? false;
   }
 
   private async sleep(ms: number): Promise<void> {
@@ -71,6 +86,62 @@ export class ApiClient {
     return body as T;
   }
 
+  private readSessionSafe(): SessionData | null {
+    if (!this.useSession) return null;
+    try {
+      return loadSession();
+    } catch {
+      return null;
+    }
+  }
+
+  private persistSessionRefresh(
+    current: SessionData,
+    payload: SessionRefreshResponse
+  ): string | null {
+    const accessToken = payload.accessToken ?? payload.token;
+    if (!accessToken) return null;
+
+    const next = saveSession({
+      accessToken,
+      refreshToken: payload.refreshToken ?? current.refreshToken,
+      accessExpiresAt: payload.expiresAt ?? current.accessExpiresAt,
+      refreshExpiresAt: payload.refreshExpiresAt ?? current.refreshExpiresAt,
+      agentId: current.agentId,
+      ownerAddress: current.ownerAddress,
+      linkedPayerAddress: current.linkedPayerAddress,
+      readiness: current.readiness
+    });
+
+    return next.accessToken;
+  }
+
+  private async refreshAccessToken(current: SessionData): Promise<string | null> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/auth/session`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ refreshToken: current.refreshToken })
+      });
+
+      if (!response.ok) {
+        logger.warn("Session refresh failed", { status: response.status });
+        return null;
+      }
+
+      const payload = this.unwrapEnvelope<SessionRefreshResponse>(
+        (await response.json()) as unknown
+      );
+
+      return this.persistSessionRefresh(current, payload);
+    } catch (error) {
+      logger.warn("Session refresh request failed", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return null;
+    }
+  }
+
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const { method = "GET", body, headers = {}, maxRetries, backoffMs } = options;
     const retries = maxRetries ?? this.maxRetries;
@@ -81,14 +152,36 @@ export class ApiClient {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const url = `${this.baseUrl}${path}`;
-        const response = await fetch(url, {
+        const requestHeaders: Record<string, string> = {
+          "content-type": "application/json",
+          ...headers
+        };
+
+        const session = this.readSessionSafe();
+        if (session?.accessToken && !requestHeaders.authorization) {
+          requestHeaders.authorization = `Bearer ${session.accessToken}`;
+        }
+
+        let response = await fetch(url, {
           method,
-          headers: {
-            "content-type": "application/json",
-            ...headers
-          },
+          headers: requestHeaders,
           body: body ? JSON.stringify(body) : undefined
         });
+
+        if (response.status === 401 && this.useSession && session && path !== "/api/auth/session") {
+          const refreshed = await this.refreshAccessToken(session);
+          if (refreshed) {
+            const retryHeaders = {
+              ...requestHeaders,
+              authorization: `Bearer ${refreshed}`
+            };
+            response = await fetch(url, {
+              method,
+              headers: retryHeaders,
+              body: body ? JSON.stringify(body) : undefined
+            });
+          }
+        }
 
         if (response.status === 402) {
           const challengeBody = await response.json().catch(() => null);
@@ -108,12 +201,7 @@ export class ApiClient {
             paymentRequestId: challenge.paymentRequestId
           });
 
-          // Resolve payer address via MCP
           const payerAddr = await this.mcpClient.getPayerAddr();
-
-          logger.info("Got payer address", { payerAddr });
-
-          // Approve payment via MCP
           const { paymentToken } = await this.mcpClient.approvePayment({
             payerAddr,
             payeeAddr: challenge.payTo,
@@ -122,14 +210,10 @@ export class ApiClient {
             merchantName: challenge.accepts[0]?.merchantName ?? "Synoptic Oracle"
           });
 
-          logger.info("Payment approved, retrying with token");
-
-          // Retry the original request with payment credentials
           const retryResponse = await fetch(url, {
             method,
             headers: {
-              "content-type": "application/json",
-              ...headers,
+              ...requestHeaders,
               "x-payment": paymentToken,
               "x-payment-request-id": challenge.paymentRequestId
             },
@@ -163,7 +247,6 @@ export class ApiClient {
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
 
-        // Don't retry MCP configuration errors
         if (lastError.message.includes("Kite MCP not configured")) {
           throw lastError;
         }
@@ -194,13 +277,17 @@ export class ApiClient {
     service: string;
     timestamp: string;
     dependencies: Record<string, string>;
+    payment?: {
+      mode: "facilitator" | "demo";
+      configured: boolean;
+      verifyReachable: "up" | "down" | "unknown";
+      settleReachable: "up" | "down" | "unknown";
+      lastCheckedAt?: string;
+      latencyMs?: number;
+      lastError?: string;
+    };
   }> {
-    return this.request<{
-      status: string;
-      service: string;
-      timestamp: string;
-      dependencies: Record<string, string>;
-    }>("/health");
+    return this.request("/health");
   }
 
   async getAgents(): Promise<{
@@ -281,19 +368,7 @@ export class ApiClient {
     }>;
   }> {
     const raw = await this.request<unknown>("/api/trades");
-    return this.unwrapEnvelope<{
-      trades: Array<{
-        id: string;
-        status: string;
-        tokenIn: string;
-        tokenOut: string;
-        amountIn: string;
-        amountOut: string;
-        executionTxHash?: string;
-        kiteAttestationTx?: string;
-        createdAt: string;
-      }>;
-    }>(raw);
+    return this.unwrapEnvelope(raw);
   }
 
   async getPayments(): Promise<{
@@ -306,18 +381,69 @@ export class ApiClient {
     }>;
   }> {
     const raw = await this.request<unknown>("/api/payments");
-    return this.unwrapEnvelope<{
-      payments: Array<{
-        id: string;
-        status: string;
-        amount: string;
-        txHash?: string;
-        createdAt: string;
-      }>;
-    }>(raw);
+    return this.unwrapEnvelope(raw);
+  }
+
+  async createWalletChallenge(input: {
+    ownerAddress: string;
+    agentId?: string;
+  }): Promise<{
+    challengeId: string;
+    message: string;
+    ownerAddress: string;
+    agentId: string;
+    expiresAt: string;
+  }> {
+    return this.request("/api/auth/wallet/challenge", {
+      method: "POST",
+      body: input
+    });
+  }
+
+  async verifyWalletChallenge(input: {
+    challengeId: string;
+    message: string;
+    signature: string;
+    ownerAddress?: string;
+    agentId?: string;
+  }): Promise<{
+    accessToken?: string;
+    refreshToken: string;
+    token?: string;
+    expiresAt: string;
+    refreshExpiresAt: string;
+    agentId: string;
+    ownerAddress: string;
+  }> {
+    return this.request("/api/auth/wallet/verify", {
+      method: "POST",
+      body: input
+    });
+  }
+
+  async linkIdentity(payerAddress: string): Promise<{ linked: boolean; agentId: string }> {
+    return this.request("/api/identity/link", {
+      method: "POST",
+      body: { payerAddress }
+    });
+  }
+
+  async getIdentity(): Promise<{
+    agentId: string;
+    ownerAddress: string;
+    payerAddress?: string;
+    linked: boolean;
+    linkedAt?: string;
+    updatedAt?: string;
+  }> {
+    return this.request("/api/identity");
   }
 }
 
-export function createApiClient(config: Config, mcpClient?: KiteMcpClient | null): ApiClient {
-  return new ApiClient(config, mcpClient);
+export function createApiClient(
+  config: Config,
+  mcpClient?: KiteMcpClient | null,
+  options: ApiClientOptions = {}
+): ApiClient {
+  return new ApiClient(config, mcpClient, options);
 }

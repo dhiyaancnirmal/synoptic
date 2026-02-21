@@ -1,7 +1,80 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Wallet } from "ethers";
 import { createServer } from "../server.js";
-import { createTestAuthHeaders } from "./test-auth.js";
+
+async function authenticateAndLink(app: Awaited<ReturnType<typeof createServer>>) {
+  const owner = Wallet.createRandom();
+  const payer = Wallet.createRandom();
+
+  const challenge = await app.inject({
+    method: "POST",
+    url: "/api/auth/wallet/challenge",
+    payload: { ownerAddress: owner.address }
+  });
+  const challengePayload = challenge.json() as {
+    challengeId: string;
+    message: string;
+    ownerAddress: string;
+  };
+
+  const signature = await owner.signMessage(challengePayload.message);
+  const verify = await app.inject({
+    method: "POST",
+    url: "/api/auth/wallet/verify",
+    payload: {
+      challengeId: challengePayload.challengeId,
+      message: challengePayload.message,
+      signature,
+      ownerAddress: challengePayload.ownerAddress
+    }
+  });
+
+  const auth = verify.json() as { accessToken: string; agentId: string };
+  const headers = { authorization: `Bearer ${auth.accessToken}` };
+
+  const linked = await app.inject({
+    method: "POST",
+    url: "/api/identity/link",
+    headers,
+    payload: { payerAddress: payer.address }
+  });
+  assert.equal(linked.statusCode, 200);
+
+  return {
+    headers,
+    payerAddress: payer.address.toLowerCase(),
+    agentId: auth.agentId
+  };
+}
+
+function buildXPayment(input: {
+  challenge: Record<string, unknown>;
+  payerAddress: string;
+}): string {
+  return JSON.stringify({
+    paymentPayload: {
+      scheme: "gokite-aa",
+      network: "kite-testnet",
+      x402Version: 1,
+      payload: {
+        authorization: {
+          from: input.payerAddress,
+          to: String(input.challenge.payTo ?? "0x66ad7ef70cc88e37fa692d85c8a55ed4c1493251"),
+          token: String(input.challenge.asset ?? "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63"),
+          value: String(input.challenge.maxAmountRequired ?? "1"),
+          validAfter: "0",
+          validBefore: "9999999999",
+          nonce: "0xoracle"
+        },
+        signature: "0xtest",
+        sessionId: "session-oracle",
+        metadata: {}
+      }
+    },
+    paymentRequirements: input.challenge
+  });
+}
 
 test("oracle route enforces challenge, settles deterministic payment, and persists payment lifecycle", async (t) => {
   const previousFetch = globalThis.fetch;
@@ -29,15 +102,12 @@ test("oracle route enforces challenge, settles deterministic payment, and persis
   }) as typeof fetch;
 
   const app = await createServer();
-  const headers = createTestAuthHeaders();
   t.after(async () => {
     globalThis.fetch = previousFetch;
     await app.close();
   });
 
-  const agents = await app.inject({ method: "GET", url: "/api/agents", headers });
-  const agentId = agents.json().data.agents[0]?.id as string;
-  assert.ok(agentId);
+  const { headers, payerAddress, agentId } = await authenticateAndLink(app);
 
   const challenged = await app.inject({
     method: "GET",
@@ -45,7 +115,7 @@ test("oracle route enforces challenge, settles deterministic payment, and persis
     headers
   });
   assert.equal(challenged.statusCode, 402);
-  const challengePayload = challenged.json();
+  const challengePayload = challenged.json() as Record<string, unknown>;
   assert.equal(challengePayload.x402Version, 1);
   assert.equal(challengePayload.scheme, "gokite-aa");
   assert.equal(typeof challengePayload.paymentRequestId, "string");
@@ -55,8 +125,8 @@ test("oracle route enforces challenge, settles deterministic payment, and persis
     url: "/oracle/price?pair=eth/usdt",
     headers: {
       ...headers,
-      "x-payment": JSON.stringify({ paymentRequestId: challengePayload.paymentRequestId }),
-      "x-payment-request-id": challengePayload.paymentRequestId
+      "x-payment": buildXPayment({ challenge: challengePayload, payerAddress }),
+      "x-payment-request-id": String(challengePayload.paymentRequestId)
     }
   });
   assert.equal(paid.statusCode, 200);
@@ -96,15 +166,22 @@ test("oracle route currently settles even when agent budget is low because local
         headers: { "content-type": "application/json" }
       });
     }
+    if (url.includes("api.coingecko.com")) {
+      return new Response(JSON.stringify({ ethereum: { usd: 3200 } }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
     return previousFetch(input, init);
   }) as typeof fetch;
 
   const app = await createServer();
-  const headers = createTestAuthHeaders();
   t.after(async () => {
     globalThis.fetch = previousFetch;
     await app.close();
   });
+
+  const { headers, payerAddress } = await authenticateAndLink(app);
 
   const created = await app.inject({
     method: "POST",
@@ -121,7 +198,8 @@ test("oracle route currently settles even when agent budget is low because local
     headers
   });
   assert.equal(challenge.statusCode, 402);
-  const paymentRequestId = challenge.json().paymentRequestId as string;
+  const challengeBody = challenge.json() as Record<string, unknown>;
+  const paymentRequestId = String(challengeBody.paymentRequestId);
   assert.ok(paymentRequestId);
 
   const blocked = await app.inject({
@@ -129,7 +207,7 @@ test("oracle route currently settles even when agent budget is low because local
     url: `/oracle/price?pair=eth/usdt&agentId=${agentId}`,
     headers: {
       ...headers,
-      "x-payment": JSON.stringify({ paymentRequestId }),
+      "x-payment": buildXPayment({ challenge: challengeBody, payerAddress }),
       "x-payment-request-id": paymentRequestId
     }
   });

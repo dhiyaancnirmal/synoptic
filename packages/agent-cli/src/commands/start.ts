@@ -1,9 +1,10 @@
 import chalk from "chalk";
 import ora from "ora";
 import { loadWallet } from "../wallet.js";
+import { loadSession } from "../session.js";
 import { resolveConfig } from "../config.js";
 import { runTradingLoop } from "../trading-loop.js";
-import { checkMcpAvailable, KITE_MCP_SETUP_INSTRUCTIONS } from "../kite-mcp.js";
+import { checkMcpAvailable, createMcpClient, KITE_MCP_SETUP_INSTRUCTIONS } from "../kite-mcp.js";
 import { printHeader, printError } from "../utils/formatting.js";
 
 export interface StartOptions {
@@ -21,13 +22,29 @@ export async function startCommand(options: StartOptions = {}): Promise<void> {
   if (!wallet) {
     spinner.fail("No wallet found");
     console.log("");
-    printError("Run `npx @synoptic/agent init` first");
+    printError("Run `npx @synoptic/agent setup` first");
+    process.exit(1);
+  }
+
+  const session = loadSession();
+  if (!session) {
+    spinner.fail("No session found");
+    console.log("");
+    printError("Run `npx @synoptic/agent setup` first");
     process.exit(1);
   }
 
   spinner.text = "Checking MCP configuration...";
 
   if (!checkMcpAvailable()) {
+    spinner.fail("Kite MCP not configured");
+    console.log("");
+    console.log(KITE_MCP_SETUP_INSTRUCTIONS);
+    process.exit(1);
+  }
+
+  const mcpClient = createMcpClient();
+  if (!mcpClient) {
     spinner.fail("Kite MCP not configured");
     console.log("");
     console.log(KITE_MCP_SETUP_INSTRUCTIONS);
@@ -56,7 +73,8 @@ export async function startCommand(options: StartOptions = {}): Promise<void> {
   try {
     await runTradingLoop(config, {
       dryRun: options.dryRun,
-      amount: options.amount
+      amount: options.amount,
+      mcpClient
     });
   } catch (error) {
     console.log("");

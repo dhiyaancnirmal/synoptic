@@ -6,12 +6,15 @@ export interface AgentServerEnv {
   authTokenSecret: string;
   authChallengeTtlMs: number;
   authSessionTtlSeconds: number;
+  authRefreshTtlSeconds: number;
   budgetResetTimeZone: string;
   kiteFacilitatorUrl: string;
+  kitePaymentMode: "facilitator" | "demo";
   kiteNetwork: string;
   kiteTestUsdtAddress: string;
   kitePaymentAssetDecimals: number;
   kiteServicePayTo: string;
+  allowServerSigning: boolean;
   agentPrivateKey: string;
   executionChainId: number;
   executionRpcUrl: string;
@@ -20,7 +23,6 @@ export interface AgentServerEnv {
   kiteRpcUrl: string;
   uniswapApiKey: string;
   registryAddress: string;
-  facilitatorMode: "real" | "demo";
   quicknodeSecurityToken: string;
   monadUsdcAddress: string;
   monadUsdtAddress: string;
@@ -29,6 +31,43 @@ export interface AgentServerEnv {
 function readNumber(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function readBoolean(value: string | undefined, fallback = false): boolean {
+  if (value === undefined) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
+function readPaymentMode(
+  explicitMode: string | undefined,
+  deprecatedMode: string | undefined
+): "facilitator" | "demo" {
+  if (explicitMode) {
+    const normalized = explicitMode.trim().toLowerCase();
+    if (normalized === "facilitator" || normalized === "demo") return normalized;
+    throw new Error(
+      `Invalid KITE_PAYMENT_MODE '${explicitMode}'. Expected 'facilitator' or 'demo'.`
+    );
+  }
+
+  if (deprecatedMode) {
+    const normalized = deprecatedMode.trim().toLowerCase();
+    if (normalized === "real") {
+      console.warn(
+        "[env] FACILITATOR_MODE=real is deprecated. Use KITE_PAYMENT_MODE=facilitator."
+      );
+      return "facilitator";
+    }
+    if (normalized === "demo") {
+      console.warn("[env] FACILITATOR_MODE is deprecated. Use KITE_PAYMENT_MODE=demo.");
+      return "demo";
+    }
+  }
+
+  return "facilitator";
 }
 
 export function loadEnv(): AgentServerEnv {
@@ -53,20 +92,26 @@ export function loadEnv(): AgentServerEnv {
       process.env.AGENT_PRIVATE_KEY ??
       "synoptic-prod-secret",
     authChallengeTtlMs: readNumber(process.env.AUTH_CHALLENGE_TTL_MS, 5 * 60_000),
-    authSessionTtlSeconds: readNumber(process.env.AUTH_SESSION_TTL_SECONDS, 60 * 60),
+    authSessionTtlSeconds: readNumber(process.env.AUTH_SESSION_TTL_SECONDS, 15 * 60),
+    authRefreshTtlSeconds: readNumber(process.env.AUTH_REFRESH_TTL_SECONDS, 7 * 24 * 60 * 60),
     budgetResetTimeZone: process.env.BUDGET_RESET_TIMEZONE ?? "UTC",
     kiteFacilitatorUrl: process.env.KITE_FACILITATOR_URL ?? "https://facilitator.pieverse.io",
+    kitePaymentMode: readPaymentMode(
+      process.env.KITE_PAYMENT_MODE,
+      process.env.FACILITATOR_MODE
+    ),
     kiteNetwork: process.env.KITE_NETWORK ?? "kite-testnet",
     kiteTestUsdtAddress:
       process.env.KITE_TEST_USDT_ADDRESS ?? "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
     kitePaymentAssetDecimals: readNumber(
       process.env.KITE_PAYMENT_ASSET_DECIMALS ?? process.env.KITE_TEST_USDT_DECIMALS,
-      6
+      18
     ),
     kiteServicePayTo:
       process.env.KITE_SERVICE_PAYTO ??
       process.env.KITE_FACILITATOR_ADDRESS ??
-      "0x12343e649e6b2b2b77649DFAb88f103c02F3C78b",
+      "0x66ad7ef70cc88e37fa692d85c8a55ed4c1493251",
+    allowServerSigning: readBoolean(process.env.ALLOW_SERVER_SIGNING, false),
     agentPrivateKey: process.env.AGENT_PRIVATE_KEY ?? "",
     executionChainId,
     executionRpcUrl,
@@ -81,10 +126,6 @@ export function loadEnv(): AgentServerEnv {
     uniswapApiKey: process.env.UNISWAP_API_KEY ?? "",
     registryAddress:
       process.env.SERVICE_REGISTRY_ADDRESS ?? process.env.TRADE_REGISTRY_ADDRESS ?? "",
-    facilitatorMode:
-      (process.env.FACILITATOR_MODE === "demo" || !process.env.KITE_FACILITATOR_URL)
-        ? "demo"
-        : "real",
     quicknodeSecurityToken:
       process.env.QUICKNODE_SECURITY_TOKEN ??
       process.env.QUICKNODE_STREAM_SECURITY_TOKEN ??

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { initCommand } from "./commands/init.js";
+import { setupCommand } from "./commands/setup.js";
 import { fundCommand } from "./commands/fund.js";
 import { startCommand } from "./commands/start.js";
 import { statusCommand } from "./commands/status.js";
@@ -18,6 +19,13 @@ program
   .name("synoptic-agent")
   .description("Autonomous agent CLI for Synoptic - x402 payments and trading")
   .version(VERSION);
+
+program
+  .command("setup")
+  .description("Initialize wallet, authenticate, and persist session")
+  .action(async () => {
+    await setupCommand();
+  });
 
 program
   .command("init")

@@ -76,11 +76,15 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
       console.log("");
     }
 
-    console.log("  3. Check funding status:");
+    console.log("  3. Run setup/auth/session flow:");
+    console.log(`     ${chalk.dim("$")} npx @synoptic/agent setup`);
+    console.log("");
+
+    console.log("  4. Check funding status:");
     console.log(`     ${chalk.dim("$")} npx @synoptic/agent fund`);
     console.log("");
 
-    console.log("  4. Start autonomous trading:");
+    console.log("  5. Start autonomous trading:");
     console.log(`     ${chalk.dim("$")} npx @synoptic/agent start`);
     console.log("");
 

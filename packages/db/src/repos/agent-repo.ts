@@ -60,12 +60,22 @@ export class AgentRepo {
     return toAgent(row);
   }
 
-  async update(id: string, input: { name?: string; strategy?: string }): Promise<Agent | undefined> {
+  async update(
+    id: string,
+    input: {
+      name?: string;
+      strategy?: string;
+      eoaAddress?: string;
+      strategyConfig?: Record<string, unknown>;
+    }
+  ): Promise<Agent | undefined> {
     const [row] = await this.db
       .update(agents)
       .set({
         name: input.name,
         strategy: input.strategy,
+        eoaAddress: input.eoaAddress,
+        strategyConfig: input.strategyConfig,
         updatedAt: new Date()
       })
       .where(eq(agents.id, id))

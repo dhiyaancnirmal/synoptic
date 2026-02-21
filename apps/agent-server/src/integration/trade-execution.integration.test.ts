@@ -50,7 +50,7 @@ test("POST /trade/quote returns 402 without x-payment header", async (t) => {
   assert.equal(typeof body.paymentRequestId, "string");
 });
 
-test("POST /trade/execute returns 402 without x-payment header", async (t) => {
+test("POST /trade/execute returns 403 when server signing is disabled", async (t) => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = (async (input, init) => {
     const url = String(input);
@@ -88,9 +88,7 @@ test("POST /trade/execute returns 402 without x-payment header", async (t) => {
     }
   });
 
-  assert.equal(response.statusCode, 402);
+  assert.equal(response.statusCode, 403);
   const body = response.json();
-  assert.equal(body.x402Version, 1);
-  assert.equal(body.scheme, "gokite-aa");
-  assert.equal(typeof body.paymentRequestId, "string");
+  assert.equal(body.code, "SERVER_SIGNING_DISABLED");
 });
