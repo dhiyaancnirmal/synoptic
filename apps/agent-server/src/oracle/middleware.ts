@@ -7,12 +7,14 @@ import type { RuntimeStoreContract } from "../state/runtime-store.js";
 const DEFAULT_PAYMENT_USD = 0.25;
 const DEFAULT_PAYMENT_ASSET_DECIMALS = 6;
 const DEFAULT_SERVICE_URL = "/oracle/price";
-const LEGACY_KITE_SCHEME = "gokite-aa";
-const FACILITATOR_SCHEME = "exact";
+const DEFAULT_PAYMENT_SCHEME = "gokite-aa";
+const DEFAULT_PAYMENT_NETWORK = "kite-testnet";
+const DEFAULT_X402_VERSION = 1;
 
 interface OraclePaymentDeps {
   store: RuntimeStoreContract;
   paymentAdapter: PaymentAdapter;
+  paymentScheme?: string;
   network: string;
   payToAddress: string;
   paymentAssetAddress: string;
@@ -27,6 +29,16 @@ function parsePaymentUsd(request: FastifyRequest): number {
   const raw = (request.query as { costUsd?: string } | undefined)?.costUsd;
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_PAYMENT_USD;
+}
+
+function normalizePaymentScheme(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : DEFAULT_PAYMENT_SCHEME;
+}
+
+function normalizePaymentNetwork(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : DEFAULT_PAYMENT_NETWORK;
 }
 
 function normalizeDecimals(value: number): number {
@@ -102,45 +114,43 @@ function summarizeXPayment(value: string): Record<string, unknown> {
     return { parsed: false, headerLength: value.length };
   }
 
-  const payload =
-    parsed.payload && typeof parsed.payload === "object"
-      ? (parsed.payload as Record<string, unknown>)
+  const envelopePayload =
+    parsed.paymentPayload && typeof parsed.paymentPayload === "object"
+      ? (parsed.paymentPayload as Record<string, unknown>)
+      : undefined;
+  const payload = envelopePayload ?? parsed;
+  const nestedPayload =
+    payload.payload && typeof payload.payload === "object"
+      ? (payload.payload as Record<string, unknown>)
+      : undefined;
+  const requirements =
+    parsed.paymentRequirements && typeof parsed.paymentRequirements === "object"
+      ? (parsed.paymentRequirements as Record<string, unknown>)
       : undefined;
   const authorization =
-    payload?.authorization && typeof payload.authorization === "object"
+    (payload.authorization && typeof payload.authorization === "object"
       ? (payload.authorization as Record<string, unknown>)
-      : undefined;
+      : undefined) ??
+    (nestedPayload?.authorization && typeof nestedPayload.authorization === "object"
+      ? (nestedPayload.authorization as Record<string, unknown>)
+      : undefined);
 
   return {
     parsed: true,
     headerLength: value.length,
-    scheme: readString(parsed, "scheme"),
-    network: readString(parsed, "network"),
+    scheme: readString(payload, "scheme") ?? readString(parsed, "scheme"),
+    network: readString(payload, "network") ?? readString(parsed, "network"),
     hasPayload: Boolean(payload),
     hasAuthorization: Boolean(authorization),
-    paymentRequestId: readString(parsed, "paymentRequestId"),
-    payer: maskAddress(readString(authorization ?? {}, "payer")),
-    payee: maskAddress(readString(authorization ?? {}, "payee")),
-    amount: readString(authorization ?? {}, "amount")
+    paymentRequestId:
+      readString(payload, "paymentRequestId") ??
+      readString(parsed, "paymentRequestId") ??
+      readString(requirements ?? {}, "paymentRequestId"),
+    payer: maskAddress(readString(authorization ?? {}, "from") ?? readString(authorization ?? {}, "payer")),
+    payee: maskAddress(readString(authorization ?? {}, "to") ?? readString(authorization ?? {}, "payee")),
+    amount: readString(authorization ?? {}, "value") ?? readString(authorization ?? {}, "amount"),
+    sessionId: maskAddress(readString(payload, "sessionId") ?? readString(nestedPayload ?? {}, "sessionId"))
   };
-}
-
-function normalizeFacilitatorNetwork(value: string): string {
-  const raw = value.trim();
-  if (raw === "kite-testnet") return "eip155:2368";
-  if (raw === "kite") return "eip155:2366";
-  return raw;
-}
-
-function normalizeFacilitatorScheme(value: string): string {
-  const raw = value.trim();
-  if (!raw) return FACILITATOR_SCHEME;
-  if (raw === LEGACY_KITE_SCHEME) return FACILITATOR_SCHEME;
-  return raw;
-}
-
-function facilitatorVersionForNetwork(network: string): number {
-  return network.startsWith("eip155:") ? 2 : 1;
 }
 
 function buildFacilitatorRequirements(input: {
@@ -150,11 +160,10 @@ function buildFacilitatorRequirements(input: {
   pair: string;
   deps: OraclePaymentDeps;
 }): Record<string, unknown> {
-  const network = normalizeFacilitatorNetwork(input.deps.network);
-  const scheme = FACILITATOR_SCHEME;
-  const x402Version = facilitatorVersionForNetwork(network);
+  const scheme = normalizePaymentScheme(input.deps.paymentScheme ?? DEFAULT_PAYMENT_SCHEME);
+  const network = normalizePaymentNetwork(input.deps.network);
   return {
-    x402Version,
+    x402Version: DEFAULT_X402_VERSION,
     scheme,
     network,
     asset: input.deps.paymentAssetAddress,
@@ -163,7 +172,7 @@ function buildFacilitatorRequirements(input: {
     maxTimeoutSeconds: 120,
     accepts: [
       {
-        x402Version,
+        x402Version: DEFAULT_X402_VERSION,
         scheme,
         network,
         maxAmountRequired: input.amountAtomic,
@@ -185,8 +194,12 @@ function normalizePaymentRequirements(
   fallback: Record<string, unknown>
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...source };
-  const fallbackScheme = readString(fallback, "scheme") ?? FACILITATOR_SCHEME;
-  const fallbackNetwork = readString(fallback, "network") ?? "eip155:2368";
+  const fallbackScheme = normalizePaymentScheme(
+    readString(fallback, "scheme") ?? DEFAULT_PAYMENT_SCHEME
+  );
+  const fallbackNetwork = normalizePaymentNetwork(
+    readString(fallback, "network") ?? DEFAULT_PAYMENT_NETWORK
+  );
 
   const sourceAccepts = Array.isArray(source.accepts)
     ? (source.accepts as unknown[])
@@ -194,8 +207,8 @@ function normalizePaymentRequirements(
   const normalizedAccepts = sourceAccepts.map((entry) => {
     if (!entry || typeof entry !== "object") return entry as unknown;
     const item = { ...(entry as Record<string, unknown>) };
-    const scheme = normalizeFacilitatorScheme(readString(item, "scheme") ?? fallbackScheme);
-    const network = normalizeFacilitatorNetwork(readString(item, "network") ?? fallbackNetwork);
+    const scheme = fallbackScheme;
+    const network = fallbackNetwork;
     item.scheme = scheme;
     item.network = network;
     if (!readString(item, "maxAmountRequired")) {
@@ -207,18 +220,15 @@ function normalizePaymentRequirements(
     if (!readString(item, "payTo")) {
       item.payTo = readString(fallback, "payTo");
     }
-    if (typeof item.x402Version !== "number") {
-      item.x402Version = facilitatorVersionForNetwork(network);
-    }
+    item.x402Version = DEFAULT_X402_VERSION;
     return item;
   });
 
-  const scheme = normalizeFacilitatorScheme(readString(out, "scheme") ?? fallbackScheme);
-  const network = normalizeFacilitatorNetwork(readString(out, "network") ?? fallbackNetwork);
+  const scheme = fallbackScheme;
+  const network = fallbackNetwork;
   out.scheme = scheme;
   out.network = network;
-  out.x402Version =
-    typeof out.x402Version === "number" ? out.x402Version : facilitatorVersionForNetwork(network);
+  out.x402Version = DEFAULT_X402_VERSION;
   if (!readString(out, "maxAmountRequired")) {
     out.maxAmountRequired = readString(fallback, "maxAmountRequired");
   }
@@ -250,15 +260,10 @@ function normalizePaymentPayload(payload: Record<string, unknown>): Record<strin
   }
 
   const schemeRaw = readString(out, "scheme");
-  if (schemeRaw) out.scheme = normalizeFacilitatorScheme(schemeRaw);
+  if (schemeRaw) out.scheme = normalizePaymentScheme(schemeRaw);
   const networkRaw = readString(out, "network");
-  if (networkRaw) {
-    const normalized = normalizeFacilitatorNetwork(networkRaw);
-    out.network = normalized;
-    if (typeof out.x402Version !== "number") {
-      out.x402Version = facilitatorVersionForNetwork(normalized);
-    }
-  }
+  if (networkRaw) out.network = normalizePaymentNetwork(networkRaw);
+  if (typeof out.x402Version !== "number") out.x402Version = DEFAULT_X402_VERSION;
 
   return out;
 }
@@ -286,6 +291,15 @@ function prepareFacilitatorXPayment(
       ? (parsed.paymentRequirements as Record<string, unknown>)
       : {};
   const paymentRequirements = normalizePaymentRequirements(requirementsRaw, fallbackRequirements);
+  if (!readString(paymentPayload, "scheme")) {
+    paymentPayload.scheme = readString(paymentRequirements, "scheme") ?? DEFAULT_PAYMENT_SCHEME;
+  }
+  if (!readString(paymentPayload, "network")) {
+    paymentPayload.network = readString(paymentRequirements, "network") ?? DEFAULT_PAYMENT_NETWORK;
+  }
+  if (typeof paymentPayload.x402Version !== "number") {
+    paymentPayload.x402Version = DEFAULT_X402_VERSION;
+  }
 
   return JSON.stringify({
     paymentPayload,
@@ -372,18 +386,21 @@ function buildChallenge(
   input: { requestId: string; amountUsd: number; amountAtomic: string; pair: string },
   deps: OraclePaymentDeps
 ) {
+  const scheme = normalizePaymentScheme(deps.paymentScheme ?? DEFAULT_PAYMENT_SCHEME);
+  const network = normalizePaymentNetwork(deps.network);
   const challenge = {
-    x402Version: 1,
-    scheme: "gokite-aa",
-    network: deps.network,
+    x402Version: DEFAULT_X402_VERSION,
+    scheme,
+    network,
     asset: deps.paymentAssetAddress,
     payTo: deps.payToAddress,
     maxAmountRequired: input.amountAtomic,
     maxTimeoutSeconds: 120,
     accepts: [
       {
-        scheme: "gokite-aa",
-        network: deps.network,
+        x402Version: DEFAULT_X402_VERSION,
+        scheme,
+        network,
         maxAmountRequired: input.amountAtomic,
         resource: DEFAULT_SERVICE_URL,
         description: "Synoptic Oracle Price API",
@@ -456,21 +473,21 @@ export async function requireX402PaymentForResource(
       status: "requested"
     });
 
-    const network = normalizeFacilitatorNetwork(deps.network);
-    const scheme = FACILITATOR_SCHEME;
-    const x402Version = facilitatorVersionForNetwork(network);
+    const scheme = normalizePaymentScheme(deps.paymentScheme ?? DEFAULT_PAYMENT_SCHEME);
+    const network = normalizePaymentNetwork(deps.network);
     const challenge = {
-      x402Version,
-      scheme: "gokite-aa",
-      network: deps.network,
+      x402Version: DEFAULT_X402_VERSION,
+      scheme,
+      network,
       asset: deps.paymentAssetAddress,
       payTo: deps.payToAddress,
       maxAmountRequired: paymentAmountAtomic,
       maxTimeoutSeconds: 120,
       accepts: [
         {
-          scheme: "gokite-aa",
-          network: deps.network,
+          x402Version: DEFAULT_X402_VERSION,
+          scheme,
+          network,
           maxAmountRequired: paymentAmountAtomic,
           resource: resource.resourcePath,
           description: resource.description,
