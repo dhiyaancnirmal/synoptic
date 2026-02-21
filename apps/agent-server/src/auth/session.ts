@@ -1,15 +1,17 @@
 import { createHmac, randomBytes } from "node:crypto";
 
-interface SessionClaims {
+export interface SessionClaims {
   sub: string;
   agentId: string;
   ownerAddress: string;
   authMode: "passport";
+  tokenType: "access" | "refresh";
+  jti: string;
   iat: number;
   exp: number;
 }
 
-interface ChallengeRecord {
+export interface ChallengeRecord {
   id: string;
   nonce: string;
   message: string;
@@ -28,6 +30,7 @@ function base64UrlDecode(value: string): string {
 
 export class SessionAuth {
   private readonly challenges = new Map<string, ChallengeRecord>();
+  private readonly revokedRefreshJti = new Set<string>();
 
   constructor(private readonly secret: string) { }
 
@@ -83,12 +86,93 @@ export class SessionAuth {
     agentId: string;
     ttlSeconds: number;
   }): string {
+    return this.signToken({
+      ownerAddress: input.ownerAddress,
+      agentId: input.agentId,
+      ttlSeconds: input.ttlSeconds,
+      tokenType: "access"
+    });
+  }
+
+  signAccessSession(input: {
+    ownerAddress: string;
+    agentId: string;
+    ttlSeconds: number;
+  }): string {
+    return this.signToken({ ...input, tokenType: "access" });
+  }
+
+  signRefreshSession(input: {
+    ownerAddress: string;
+    agentId: string;
+    ttlSeconds: number;
+  }): string {
+    return this.signToken({ ...input, tokenType: "refresh" });
+  }
+
+  issueTokenPair(input: {
+    ownerAddress: string;
+    agentId: string;
+    accessTtlSeconds: number;
+    refreshTtlSeconds: number;
+  }): { accessToken: string; refreshToken: string } {
+    return {
+      accessToken: this.signAccessSession({
+        ownerAddress: input.ownerAddress,
+        agentId: input.agentId,
+        ttlSeconds: input.accessTtlSeconds
+      }),
+      refreshToken: this.signRefreshSession({
+        ownerAddress: input.ownerAddress,
+        agentId: input.agentId,
+        ttlSeconds: input.refreshTtlSeconds
+      })
+    };
+  }
+
+  rotateRefreshToken(input: {
+    refreshToken: string;
+    accessTtlSeconds: number;
+    refreshTtlSeconds: number;
+  }): { accessToken: string; refreshToken: string; claims: SessionClaims } | null {
+    const refreshClaims = this.verifyToken(input.refreshToken, "refresh");
+    if (!refreshClaims) return null;
+    this.revokedRefreshJti.add(refreshClaims.jti);
+    const nextPair = this.issueTokenPair({
+      ownerAddress: refreshClaims.ownerAddress,
+      agentId: refreshClaims.agentId,
+      accessTtlSeconds: input.accessTtlSeconds,
+      refreshTtlSeconds: input.refreshTtlSeconds
+    });
+    return { ...nextPair, claims: refreshClaims };
+  }
+
+  verifySession(token: string): SessionClaims | null {
+    return this.verifyToken(token, "access");
+  }
+
+  verifyAccessSession(token: string): SessionClaims | null {
+    return this.verifyToken(token, "access");
+  }
+
+  verifyRefreshSession(token: string): SessionClaims | null {
+    return this.verifyToken(token, "refresh");
+  }
+
+  private signToken(input: {
+    ownerAddress: string;
+    agentId: string;
+    ttlSeconds: number;
+    tokenType: "access" | "refresh";
+  }): string {
     const now = Math.floor(Date.now() / 1000);
     const claims: SessionClaims = {
-      sub: input.ownerAddress,
+      sub: input.ownerAddress.toLowerCase(),
       agentId: input.agentId,
-      ownerAddress: input.ownerAddress,
+      ownerAddress: input.ownerAddress.toLowerCase(),
       authMode: "passport",
+      tokenType: input.tokenType,
+      jti: randomBytes(16).toString("hex"),
       iat: now,
       exp: now + input.ttlSeconds
     };
@@ -100,7 +184,7 @@ export class SessionAuth {
     return `${encodedHeader}.${encodedPayload}.${signature}`;
   }
 
-  verifySession(token: string): SessionClaims | null {
+  private verifyToken(token: string, expectedType: "access" | "refresh"): SessionClaims | null {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
     const [header, payload, signature] = parts;
@@ -112,6 +196,9 @@ export class SessionAuth {
       const parsed = JSON.parse(base64UrlDecode(payload)) as SessionClaims;
       if (!parsed.exp || parsed.exp <= Math.floor(Date.now() / 1000)) return null;
       if (!parsed.ownerAddress || !parsed.agentId) return null;
+      if (!parsed.tokenType || parsed.tokenType !== expectedType) return null;
+      if (!parsed.jti || parsed.jti.length === 0) return null;
+      if (expectedType === "refresh" && this.revokedRefreshJti.has(parsed.jti)) return null;
       return parsed;
     } catch {
       return null;

@@ -351,12 +351,17 @@ export async function registerCompatRoutes(
       return;
     }
 
+    const pair = sessionAuth.issueTokenPair({
+      ownerAddress: challenge.ownerAddress,
+      agentId: challenge.agentId,
+      accessTtlSeconds: env.authSessionTtlSeconds,
+      refreshTtlSeconds: env.authRefreshTtlSeconds
+    });
     return {
-      token: sessionAuth.signSession({
-        ownerAddress: challenge.ownerAddress,
-        agentId: challenge.agentId,
-        ttlSeconds: env.authSessionTtlSeconds
-      })
+      token: pair.accessToken,
+      accessToken: pair.accessToken,
+      refreshToken: pair.refreshToken,
+      tokenType: "Bearer"
     };
   });
 

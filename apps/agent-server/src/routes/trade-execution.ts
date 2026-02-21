@@ -2,8 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { RuntimeStoreContract } from "../state/runtime-store.js";
 import { WsHub } from "../ws/hub.js";
 import { RealTradingAdapter, RealAttestationAdapter, WMON, USDC_MONAD, MONAD_TESTNET_CHAIN_ID } from "@synoptic/agent-core";
-import { RealFacilitatorPaymentAdapter } from "../oracle/facilitator.js";
-import { DemoPaymentAdapter } from "../oracle/demo-facilitator.js";
+import { createPaymentAdapter } from "../oracle/payment-adapter.js";
 import { requireX402Payment } from "../oracle/middleware.js";
 import type { AgentServerEnv } from "../env.js";
 
@@ -45,13 +44,11 @@ export async function registerTradeExecutionRoutes(
   app: FastifyInstance,
   deps: TradeExecutionDeps
 ): Promise<void> {
-  const paymentAdapter =
-    deps.env.facilitatorMode === "demo"
-      ? new DemoPaymentAdapter()
-      : new RealFacilitatorPaymentAdapter({
-          baseUrl: deps.facilitatorUrl,
-          network: deps.network
-        });
+  const paymentAdapter = createPaymentAdapter({
+    mode: deps.env.paymentMode,
+    facilitatorUrl: deps.facilitatorUrl,
+    network: deps.network
+  });
 
   app.post("/trade/quote", async (request, reply) => {
     const allowed = await requireX402Payment(request, reply, {

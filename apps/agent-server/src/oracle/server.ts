@@ -1,8 +1,7 @@
 import type { FastifyInstance } from "fastify";
+import type { PaymentAdapter } from "@synoptic/agent-core";
 import type { RuntimeStoreContract } from "../state/runtime-store.js";
 import { WsHub } from "../ws/hub.js";
-import { RealFacilitatorPaymentAdapter } from "./facilitator.js";
-import { DemoPaymentAdapter } from "./demo-facilitator.js";
 import { requireX402Payment } from "./middleware.js";
 
 async function fetchEthUsdPrice(fetcher: typeof fetch = fetch): Promise<number> {
@@ -21,32 +20,29 @@ async function fetchEthUsdPrice(fetcher: typeof fetch = fetch): Promise<number> 
   return price;
 }
 
+function readStaticEthUsdPrice(): number {
+  const fromEnv = Number(process.env.ORACLE_ETH_USD_PRICE);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
+  return 3000;
+}
+
 export async function registerOracleRoutes(
   app: FastifyInstance,
   deps: {
     store: RuntimeStoreContract;
     wsHub: WsHub;
     budgetResetTimeZone: string;
-    facilitatorUrl: string;
-    facilitatorMode: "real" | "demo";
+    paymentAdapter: PaymentAdapter;
     network: string;
     payToAddress: string;
     paymentAssetAddress: string;
     paymentAssetDecimals: number;
   }
 ): Promise<void> {
-  const paymentAdapter =
-    deps.facilitatorMode === "demo"
-      ? new DemoPaymentAdapter()
-      : new RealFacilitatorPaymentAdapter({
-          baseUrl: deps.facilitatorUrl,
-          network: deps.network
-        });
-
   app.get("/oracle/price", async (request, reply) => {
     const allowed = await requireX402Payment(request, reply, {
       store: deps.store,
-      paymentAdapter,
+      paymentAdapter: deps.paymentAdapter,
       network: deps.network,
       payToAddress: deps.payToAddress,
       paymentAssetAddress: deps.paymentAssetAddress,
@@ -65,11 +61,18 @@ export async function registerOracleRoutes(
     }
 
     const pair = ((request.query as { pair?: string }).pair ?? "ETH/USDT").toUpperCase();
-    const price = await fetchEthUsdPrice();
+    let source = "coingecko";
+    let price = 0;
+    try {
+      price = await fetchEthUsdPrice();
+    } catch {
+      price = readStaticEthUsdPrice();
+      source = "local-static";
+    }
     await deps.store.createPriceSnapshot({
       pair,
       price: price.toFixed(8),
-      source: "coingecko",
+      source,
       timestamp: new Date()
     });
     deps.wsHub.broadcast({ type: "price.update", pair, price, time: Date.now() });
@@ -77,7 +80,7 @@ export async function registerOracleRoutes(
       pair,
       price,
       timestamp: Date.now(),
-      source: "coingecko"
+      source
     };
   });
 }
