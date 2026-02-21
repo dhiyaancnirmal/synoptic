@@ -6,11 +6,16 @@ export interface AgentServerEnv {
   authTokenSecret: string;
   authChallengeTtlMs: number;
   authSessionTtlSeconds: number;
+  authRefreshTtlSeconds: number;
   budgetResetTimeZone: string;
   kiteFacilitatorUrl: string;
+  kitePaymentMode: "facilitator" | "demo";
+  kitePaymentScheme: string;
   kiteNetwork: string;
   kiteTestUsdtAddress: string;
+  kitePaymentAssetDecimals: number;
   kiteServicePayTo: string;
+  allowServerSigning: boolean;
   agentPrivateKey: string;
   executionChainId: number;
   executionRpcUrl: string;
@@ -27,6 +32,24 @@ export interface AgentServerEnv {
 function readNumber(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function readBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
+function readPaymentMode(value: string | undefined): "facilitator" | "demo" {
+  const normalized = (value ?? "facilitator").trim().toLowerCase();
+  if (normalized === "facilitator" || normalized === "demo") {
+    return normalized;
+  }
+  throw new Error(
+    `Invalid KITE_PAYMENT_MODE '${value}'. Expected 'facilitator' or 'demo'.`
+  );
 }
 
 export function loadEnv(): AgentServerEnv {
@@ -52,15 +75,26 @@ export function loadEnv(): AgentServerEnv {
       "synoptic-prod-secret",
     authChallengeTtlMs: readNumber(process.env.AUTH_CHALLENGE_TTL_MS, 5 * 60_000),
     authSessionTtlSeconds: readNumber(process.env.AUTH_SESSION_TTL_SECONDS, 60 * 60),
+    authRefreshTtlSeconds: readNumber(
+      process.env.AUTH_REFRESH_TTL_SECONDS,
+      7 * 24 * 60 * 60
+    ),
     budgetResetTimeZone: process.env.BUDGET_RESET_TIMEZONE ?? "UTC",
     kiteFacilitatorUrl: process.env.KITE_FACILITATOR_URL ?? "https://facilitator.pieverse.io",
+    kitePaymentMode: readPaymentMode(process.env.KITE_PAYMENT_MODE),
+    kitePaymentScheme: process.env.KITE_PAYMENT_SCHEME ?? "gokite-aa",
     kiteNetwork: process.env.KITE_NETWORK ?? "kite-testnet",
     kiteTestUsdtAddress:
       process.env.KITE_TEST_USDT_ADDRESS ?? "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
+    kitePaymentAssetDecimals: readNumber(
+      process.env.KITE_PAYMENT_ASSET_DECIMALS ?? process.env.KITE_TEST_USDT_DECIMALS,
+      18
+    ),
     kiteServicePayTo:
       process.env.KITE_SERVICE_PAYTO ??
       process.env.KITE_FACILITATOR_ADDRESS ??
-      "0x12343e649e6b2b2b77649DFAb88f103c02F3C78b",
+      "0x66ad7ef70cc88e37fa692d85c8a55ed4c1493251",
+    allowServerSigning: readBoolean(process.env.ALLOW_SERVER_SIGNING, false),
     agentPrivateKey: process.env.AGENT_PRIVATE_KEY ?? "",
     executionChainId,
     executionRpcUrl,

@@ -76,6 +76,22 @@ function readString(obj: Record<string, unknown>, keys: string[]): string | unde
   return undefined;
 }
 
+function summarizeFacilitatorBody(body: Record<string, unknown>): string | undefined {
+  const code = readString(body, ["code", "error", "errorCode", "status"]);
+  const message = readString(body, ["message", "detail", "error_description", "reason"]);
+  const parts = [code ? `code=${code}` : "", message ? `message=${message}` : ""].filter(Boolean);
+  return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
+function formatFailureReason(
+  stage: "verify" | "settle",
+  status: number,
+  body: Record<string, unknown>
+): string {
+  const summary = summarizeFacilitatorBody(body);
+  return summary ? `${stage}_http_${status} ${summary}` : `${stage}_http_${status}`;
+}
+
 async function parseResponse(response: Response): Promise<Record<string, unknown>> {
   const json = (await response.json().catch(() => ({}))) as unknown;
   if (!json || typeof json !== "object") return {};
@@ -112,13 +128,16 @@ export class RealFacilitatorPaymentAdapter implements PaymentAdapter {
     if (!response.ok) {
       return {
         authorized: false,
-        reason: readString(body, ["message", "error", "code"]) ?? `verify_http_${response.status}`
+        reason: formatFailureReason("verify", response.status, body)
       };
     }
 
     const explicit = readBool(body, ["valid", "verified", "authorized", "success"]);
     if (explicit === false) {
-      return { authorized: false, reason: readString(body, ["message", "error", "code"]) ?? "verify_rejected" };
+      return {
+        authorized: false,
+        reason: summarizeFacilitatorBody(body) ?? "verify_rejected"
+      };
     }
 
     return { authorized: true };
@@ -143,13 +162,16 @@ export class RealFacilitatorPaymentAdapter implements PaymentAdapter {
     if (!response.ok) {
       return {
         settled: false,
-        reason: readString(body, ["message", "error", "code"]) ?? `settle_http_${response.status}`
+        reason: formatFailureReason("settle", response.status, body)
       };
     }
 
     const explicit = readBool(body, ["settled", "success"]);
     if (explicit === false) {
-      return { settled: false, reason: readString(body, ["message", "error", "code"]) ?? "settle_rejected" };
+      return {
+        settled: false,
+        reason: summarizeFacilitatorBody(body) ?? "settle_rejected"
+      };
     }
 
     return {

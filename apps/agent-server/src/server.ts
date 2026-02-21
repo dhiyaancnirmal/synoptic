@@ -10,6 +10,9 @@ import { registerActivityRoutes } from "./routes/activity.js";
 import { registerCompatRoutes } from "./routes/compat.js";
 import { registerQuickNodeWebhookRoutes } from "./routes/quicknode.js";
 import { registerTradeExecutionRoutes } from "./routes/trade-execution.js";
+import { registerTradeIntentRoutes } from "./routes/trade-intent.js";
+import { registerAuthWalletRoutes } from "./routes/auth-wallet.js";
+import { registerIdentityRoutes } from "./routes/identity.js";
 import { registerOracleRoutes } from "./oracle/server.js";
 import { sendEvent } from "./ws/handler.js";
 import { WsHub } from "./ws/hub.js";
@@ -113,6 +116,8 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   const publicPaths = new Set([
     "/health",
     "/ws",
+    "/api/auth/wallet/challenge",
+    "/api/auth/wallet/verify",
     "/auth/siwe/challenge",
     "/auth/siwe/verify",
     "/webhooks/quicknode/monad",
@@ -122,7 +127,9 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   ]);
   app.addHook("onRequest", async (request, reply) => {
     if (request.method === "OPTIONS") return;
-    if (publicPaths.has(request.url.split("?")[0] ?? request.url)) return;
+    const path = request.url.split("?")[0] ?? request.url;
+    if (publicPaths.has(path)) return;
+    if (request.method === "POST" && path === "/api/auth/session") return;
 
     const header = request.headers.authorization;
     const token =
@@ -188,24 +195,47 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     wsHub,
     securityToken: env.quicknodeSecurityToken
   });
+  await registerAuthWalletRoutes(app, {
+    store,
+    env,
+    sessionAuth
+  });
+  await registerIdentityRoutes(app, {
+    store,
+    sessionAuth
+  });
   await registerCompatRoutes(app, store, orchestrator, wsHub, env, sessionAuth);
   await registerOracleRoutes(app, {
     store,
     wsHub,
     budgetResetTimeZone: env.budgetResetTimeZone,
     facilitatorUrl: env.kiteFacilitatorUrl,
+    scheme: env.kitePaymentScheme,
     network: env.kiteNetwork,
     payToAddress: env.kiteServicePayTo,
-    paymentAssetAddress: env.kiteTestUsdtAddress
+    paymentAssetAddress: env.kiteTestUsdtAddress,
+    paymentAssetDecimals: env.kitePaymentAssetDecimals
   });
   await registerTradeExecutionRoutes(app, {
     store,
     wsHub,
     env,
-    facilitatorUrl: env.kiteFacilitatorUrl,
+    scheme: env.kitePaymentScheme,
     network: env.kiteNetwork,
     payToAddress: env.kiteServicePayTo,
     paymentAssetAddress: env.kiteTestUsdtAddress,
+    paymentAssetDecimals: env.kitePaymentAssetDecimals,
+    budgetResetTimeZone: env.budgetResetTimeZone
+  });
+  await registerTradeIntentRoutes(app, {
+    store,
+    wsHub,
+    env,
+    scheme: env.kitePaymentScheme,
+    network: env.kiteNetwork,
+    payToAddress: env.kiteServicePayTo,
+    paymentAssetAddress: env.kiteTestUsdtAddress,
+    paymentAssetDecimals: env.kitePaymentAssetDecimals,
     budgetResetTimeZone: env.budgetResetTimeZone
   });
 

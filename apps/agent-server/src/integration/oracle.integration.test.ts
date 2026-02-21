@@ -96,6 +96,12 @@ test("oracle route currently settles even when agent budget is low because local
         headers: { "content-type": "application/json" }
       });
     }
+    if (url.includes("api.coingecko.com")) {
+      return new Response(JSON.stringify({ ethereum: { usd: 3210.12 } }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
     return previousFetch(input, init);
   }) as typeof fetch;
 

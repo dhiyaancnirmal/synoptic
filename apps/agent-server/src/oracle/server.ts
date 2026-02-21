@@ -27,9 +27,11 @@ export async function registerOracleRoutes(
     wsHub: WsHub;
     budgetResetTimeZone: string;
     facilitatorUrl: string;
+    scheme: string;
     network: string;
     payToAddress: string;
     paymentAssetAddress: string;
+    paymentAssetDecimals: number;
   }
 ): Promise<void> {
   const paymentAdapter = new RealFacilitatorPaymentAdapter({
@@ -41,9 +43,11 @@ export async function registerOracleRoutes(
     const allowed = await requireX402Payment(request, reply, {
       store: deps.store,
       paymentAdapter,
+      paymentScheme: deps.scheme,
       network: deps.network,
       payToAddress: deps.payToAddress,
       paymentAssetAddress: deps.paymentAssetAddress,
+      paymentAssetDecimals: deps.paymentAssetDecimals,
       budgetResetTimeZone: deps.budgetResetTimeZone,
       enforceLocalBudget: false,
       onPayment(payment) {
