@@ -484,7 +484,7 @@ async function bootstrapPassportSession(): Promise<string> {
     throw new ApiClientError("No wallet account available for signing.", 401);
   }
 
-  const challenge = await request<SiweChallengeResponse>("/auth/siwe/challenge", {
+  const challenge = await request<SiweChallengeResponse>("/api/auth/wallet/challenge", {
     method: "POST",
     body: JSON.stringify({ ownerAddress })
   });
@@ -498,7 +498,7 @@ async function bootstrapPassportSession(): Promise<string> {
     throw new ApiClientError("Signature was rejected by wallet.", 401);
   }
 
-  const verify = await request<{ token: string }>("/auth/siwe/verify", {
+  const verify = await request<{ token?: string; accessToken?: string }>("/api/auth/wallet/verify", {
     method: "POST",
     body: JSON.stringify({
       challengeId: challenge.challengeId,
@@ -509,12 +509,13 @@ async function bootstrapPassportSession(): Promise<string> {
     })
   });
 
-  if (!verify.token) {
+  const token = verify.accessToken ?? verify.token;
+  if (!token) {
     throw new ApiClientError("Passport authentication did not return a session token.", 401);
   }
 
-  writeSessionToken(verify.token);
-  return verify.token;
+  writeSessionToken(token);
+  return token;
 }
 
 function asArray(value: unknown): unknown[] {

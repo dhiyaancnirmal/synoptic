@@ -10,10 +10,12 @@ import { registerActivityRoutes } from "./routes/activity.js";
 import { registerCompatRoutes } from "./routes/compat.js";
 import { registerQuickNodeWebhookRoutes } from "./routes/quicknode.js";
 import { registerTradeExecutionRoutes } from "./routes/trade-execution.js";
+import { registerAuthWalletRoutes } from "./routes/auth-wallet.js";
+import { registerIdentityRoutes } from "./routes/identity.js";
 import { registerOracleRoutes } from "./oracle/server.js";
 import { registerMarketplaceRoutes } from "./routes/marketplace.js";
-import { DemoPaymentAdapter } from "./oracle/demo-facilitator.js";
-import { RealFacilitatorPaymentAdapter } from "./oracle/facilitator.js";
+import { createPaymentAdapter } from "./oracle/payment-adapter.js";
+import { PaymentCapabilityProbe } from "./oracle/payment-capability.js";
 import { sendEvent } from "./ws/handler.js";
 import { WsHub } from "./ws/hub.js";
 import { createDbClient, createRepositories } from "@synoptic/db";
@@ -53,6 +55,16 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   const app = Fastify({ logger: true });
   const env = loadEnv();
   const sessionAuth = new SessionAuth(env.authTokenSecret);
+  const paymentAdapter = createPaymentAdapter({
+    mode: env.paymentMode,
+    facilitatorUrl: env.kiteFacilitatorUrl,
+    network: env.kiteNetwork
+  });
+  const paymentCapabilityProbe = new PaymentCapabilityProbe(
+    paymentAdapter,
+    env.paymentMode,
+    env.paymentMode === "demo" || Boolean(env.kiteFacilitatorUrl)
+  );
   const { store, usesDatabase } = createStore();
   const wsHub = new WsHub();
   const canRunRealTick =
@@ -116,30 +128,37 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   const publicPaths = new Set([
     "/health",
     "/ws",
+    "/api/auth/wallet/challenge",
+    "/api/auth/wallet/verify",
     "/auth/siwe/challenge",
     "/auth/siwe/verify",
     "/webhooks/quicknode/monad",
     "/oracle/price",
     "/trade/quote",
     "/trade/execute",
+    "/trade/supported-chains",
     "/marketplace/catalog"
   ]);
   app.addHook("onRequest", async (request, reply) => {
     if (request.method === "OPTIONS") return;
     const urlPath = request.url.split("?")[0] ?? request.url;
     if (publicPaths.has(urlPath)) return;
+    if (urlPath === "/api/auth/session" && request.method === "POST") return;
     if (urlPath.startsWith("/marketplace/")) return;
 
     const header = request.headers.authorization;
     const token =
       typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-    if (!token || !sessionAuth.verifySession(token)) {
+    const claims = token ? sessionAuth.verifyAccessSession(token) : null;
+    if (!claims) {
       reply.status(401).send({
         code: "UNAUTHORIZED",
         message: "Valid bearer token required",
         requestId: request.id
       });
+      return;
     }
+    (request as { sessionClaims?: unknown }).sessionClaims = claims;
   });
 
   const tradingConfigured =
@@ -147,20 +166,24 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   const attestationConfigured =
     Boolean(env.agentPrivateKey) && Boolean(env.kiteRpcUrl) && Boolean(env.registryAddress);
 
-  app.get("/health", async () => ({
-    status: "ok",
-    service: "agent-server",
-    timestamp: new Date().toISOString(),
-    dependencies: {
-      database: usesDatabase ? "up" : "down",
-      facilitator: env.facilitatorMode,
-      auth: "passport"
-    },
-    capabilities: {
-      trading: tradingConfigured ? "configured" : "not_configured",
-      attestation: attestationConfigured ? "configured" : "not_configured"
-    }
-  }));
+  app.get("/health", async () => {
+    const payment = await paymentCapabilityProbe.getStatus();
+    return {
+      status: "ok",
+      service: "agent-server",
+      timestamp: new Date().toISOString(),
+      dependencies: {
+        database: usesDatabase ? "up" : "down",
+        facilitator: env.facilitatorMode,
+        auth: "passport"
+      },
+      capabilities: {
+        trading: tradingConfigured ? "configured" : "not_configured",
+        attestation: attestationConfigured ? "configured" : "not_configured"
+      },
+      payment
+    };
+  });
 
   app.get("/ws", { websocket: true }, (socket) => {
     wsHub.subscribe(socket);
@@ -185,6 +208,8 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   });
 
   await registerAgentRoutes(app, store, orchestrator, wsHub);
+  await registerAuthWalletRoutes(app, { store, env, sessionAuth });
+  await registerIdentityRoutes(app, store);
   await registerHoldingsRoutes(app, store);
   await registerTradeRoutes(app, store);
   await registerPaymentRoutes(app, store);
@@ -199,24 +224,16 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     store,
     wsHub,
     budgetResetTimeZone: env.budgetResetTimeZone,
-    facilitatorUrl: env.kiteFacilitatorUrl,
-    facilitatorMode: env.facilitatorMode,
+    paymentAdapter,
     network: env.kiteNetwork,
     payToAddress: env.kiteServicePayTo,
     paymentAssetAddress: env.kiteTestUsdtAddress,
     paymentAssetDecimals: env.kitePaymentAssetDecimals
   });
-  const marketplacePaymentAdapter =
-    env.facilitatorMode === "demo"
-      ? new DemoPaymentAdapter()
-      : new RealFacilitatorPaymentAdapter({
-          baseUrl: env.kiteFacilitatorUrl,
-          network: env.kiteNetwork
-        });
   await registerMarketplaceRoutes(app, {
     store,
     wsHub,
-    paymentAdapter: marketplacePaymentAdapter,
+    paymentAdapter,
     network: env.kiteNetwork,
     payToAddress: env.kiteServicePayTo,
     paymentAssetAddress: env.kiteTestUsdtAddress,
@@ -234,6 +251,5 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     paymentAssetDecimals: env.kitePaymentAssetDecimals,
     budgetResetTimeZone: env.budgetResetTimeZone
   });
-
   return app;
 }

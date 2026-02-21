@@ -1,6 +1,7 @@
 import type { Config } from "./types.js";
 import { KITE_MCP_SETUP_INSTRUCTIONS, type KiteMcpClient } from "./kite-mcp.js";
 import logger from "./logger.js";
+import { loadSession, saveSession, type AgentSession } from "./session.js";
 
 interface RequestOptions {
   method?: "GET" | "POST";
@@ -41,6 +42,71 @@ export class ApiClient {
     this.mcpClient = mcpClient ?? null;
   }
 
+  private readBearerToken(headers: Record<string, string>): string | undefined {
+    const existing = headers.authorization ?? headers.Authorization;
+    if (existing) return existing;
+    const session = loadSession();
+    if (!session?.accessToken) return undefined;
+    return `Bearer ${session.accessToken}`;
+  }
+
+  private upsertSession(input: {
+    accessToken: string;
+    refreshToken: string;
+    accessTtlSeconds: number;
+    refreshTtlSeconds: number;
+    agentId: string;
+    ownerAddress: string;
+  }): void {
+    const existing = loadSession();
+    const now = Date.now();
+    const session: AgentSession = {
+      accessToken: input.accessToken,
+      refreshToken: input.refreshToken,
+      accessExpiresAt: new Date(now + input.accessTtlSeconds * 1000).toISOString(),
+      refreshExpiresAt: new Date(now + input.refreshTtlSeconds * 1000).toISOString(),
+      agentId: input.agentId,
+      ownerAddress: input.ownerAddress,
+      linkedPayerAddress: existing?.linkedPayerAddress,
+      readiness: existing?.readiness
+    };
+    saveSession(session);
+  }
+
+  private async refreshFromSession(): Promise<boolean> {
+    const session = loadSession();
+    if (!session?.refreshToken) return false;
+    try {
+      const refreshed = await this.request<{
+        code: "OK";
+        data: {
+          accessToken: string;
+          refreshToken: string;
+          accessTtlSeconds: number;
+          refreshTtlSeconds: number;
+          agentId: string;
+          ownerAddress: string;
+        };
+      }>("/api/auth/session", {
+        method: "POST",
+        body: { refreshToken: session.refreshToken },
+        maxRetries: 0
+      });
+      const payload = this.unwrapEnvelope<{
+        accessToken: string;
+        refreshToken: string;
+        accessTtlSeconds: number;
+        refreshTtlSeconds: number;
+        agentId: string;
+        ownerAddress: string;
+      }>(refreshed);
+      this.upsertSession(payload);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private async sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -72,6 +138,14 @@ export class ApiClient {
   }
 
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    return this.requestWithRefresh(path, options, false);
+  }
+
+  private async requestWithRefresh<T>(
+    path: string,
+    options: RequestOptions = {},
+    didRefresh: boolean
+  ): Promise<T> {
     const { method = "GET", body, headers = {}, maxRetries, backoffMs } = options;
     const retries = maxRetries ?? this.maxRetries;
     const backoff = backoffMs ?? this.backoffMs;
@@ -85,6 +159,7 @@ export class ApiClient {
           method,
           headers: {
             "content-type": "application/json",
+            ...(this.readBearerToken(headers) ? { authorization: this.readBearerToken(headers)! } : {}),
             ...headers
           },
           body: body ? JSON.stringify(body) : undefined
@@ -154,6 +229,13 @@ export class ApiClient {
           continue;
         }
 
+        if (response.status === 401 && !didRefresh) {
+          const refreshed = await this.refreshFromSession();
+          if (refreshed) {
+            return this.requestWithRefresh(path, options, true);
+          }
+        }
+
         if (!response.ok) {
           const text = await response.text();
           throw new Error(`HTTP ${response.status}: ${text}`);
@@ -181,6 +263,71 @@ export class ApiClient {
     }
 
     throw lastError ?? new Error("Request failed after retries");
+  }
+
+  async walletChallenge(params: {
+    ownerAddress: string;
+    agentId?: string;
+  }): Promise<{
+    challengeId: string;
+    message: string;
+    expiresAt: string;
+    ownerAddress: string;
+    agentId: string;
+  }> {
+    const raw = await this.request<unknown>("/api/auth/wallet/challenge", {
+      method: "POST",
+      body: params
+    });
+    return this.unwrapEnvelope<{
+      challengeId: string;
+      message: string;
+      expiresAt: string;
+      ownerAddress: string;
+      agentId: string;
+    }>(raw);
+  }
+
+  async walletVerify(params: {
+    challengeId: string;
+    message: string;
+    signature: string;
+  }): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    accessTtlSeconds: number;
+    refreshTtlSeconds: number;
+    agentId: string;
+    ownerAddress: string;
+  }> {
+    const raw = await this.request<unknown>("/api/auth/wallet/verify", {
+      method: "POST",
+      body: params
+    });
+    return this.unwrapEnvelope<{
+      accessToken: string;
+      refreshToken: string;
+      accessTtlSeconds: number;
+      refreshTtlSeconds: number;
+      agentId: string;
+      ownerAddress: string;
+    }>(raw);
+  }
+
+  async linkIdentityPayer(payerAddress: string): Promise<{
+    linkedPayerAddress: string;
+    ownerAddress: string;
+    agentId: string;
+  }> {
+    const raw = await this.request<unknown>("/api/identity/link", {
+      method: "POST",
+      body: { payerAddress }
+    });
+    return this.unwrapEnvelope<{
+      linkedPayerAddress: string;
+      ownerAddress: string;
+      agentId: string;
+    }>(raw);
   }
 
   async getPrice(pair: string): Promise<{ price: number; timestamp: string }> {

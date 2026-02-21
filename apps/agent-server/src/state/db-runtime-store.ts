@@ -38,7 +38,9 @@ export class DbRuntimeStore implements RuntimeStoreContract {
   async updateAgent(id: string, input: Partial<Agent>) {
     const agent = await this.repos.agentRepo.update(id, {
       name: input.name,
-      strategy: input.strategy
+      strategy: input.strategy,
+      eoaAddress: input.eoaAddress,
+      strategyConfig: input.strategyConfig
     });
     if (agent) {
       await this.addActivity(id, "agent.updated", "kite-testnet", { fields: Object.keys(input) });

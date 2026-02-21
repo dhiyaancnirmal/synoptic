@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { initCommand } from "./commands/init.js";
 import { fundCommand } from "./commands/fund.js";
 import { startCommand } from "./commands/start.js";
+import { setupCommand } from "./commands/setup.js";
 import { statusCommand } from "./commands/status.js";
 import { exportKeyCommand } from "./commands/export-key.js";
 import { deployKeyCommand } from "./commands/deploy-key.js";
@@ -47,6 +48,13 @@ program
       amount: options.amount,
       tickInterval: options.tickInterval
     });
+  });
+
+program
+  .command("setup")
+  .description("Run wallet auth + session bootstrap and optional payer linking")
+  .action(async () => {
+    await setupCommand();
   });
 
 program

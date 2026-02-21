@@ -1,5 +1,5 @@
-import { MarketplaceRouteClient } from "@/components/dashboard/routes/MarketplaceRouteClient";
+import { redirect } from "next/navigation";
 
 export default function MarketplacePage() {
-  return <MarketplaceRouteClient />;
+  redirect("/execute");
 }

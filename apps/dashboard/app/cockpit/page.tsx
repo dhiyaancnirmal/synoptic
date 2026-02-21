@@ -1,5 +1,5 @@
-import { CockpitRouteClient } from "@/components/dashboard/routes/CockpitRouteClient";
+import { redirect } from "next/navigation";
 
 export default function CockpitPage() {
-  return <CockpitRouteClient />;
+  redirect("/overview");
 }

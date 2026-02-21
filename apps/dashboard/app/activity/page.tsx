@@ -1,10 +1,5 @@
-import { Suspense } from "react";
-import { ActivityRouteClient } from "@/components/dashboard/routes/ActivityRouteClient";
+import { redirect } from "next/navigation";
 
 export default function ActivityPage() {
-  return (
-    <Suspense fallback={null}>
-      <ActivityRouteClient />
-    </Suspense>
-  );
+  redirect("/evidence");
 }

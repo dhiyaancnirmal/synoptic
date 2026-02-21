@@ -1,5 +1,5 @@
-import { StreamsRouteClient } from "@/components/dashboard/routes/StreamsRouteClient";
+import { redirect } from "next/navigation";
 
 export default function StreamsPage() {
-  return <StreamsRouteClient />;
+  redirect("/evidence");
 }

@@ -1,10 +1,5 @@
-import { Suspense } from "react";
-import { TradingRouteClient } from "@/components/dashboard/routes/TradingRouteClient";
+import { redirect } from "next/navigation";
 
 export default function TradingPage() {
-  return (
-    <Suspense fallback={null}>
-      <TradingRouteClient />
-    </Suspense>
-  );
+  redirect("/execute");
 }

@@ -91,6 +91,26 @@ function parseXPaymentHeader(value: string): Record<string, unknown> | undefined
   return undefined;
 }
 
+function extractPayerAddress(value: string): string | undefined {
+  const parsed = parseXPaymentHeader(value);
+  if (!parsed) return undefined;
+  const payload =
+    parsed.payload && typeof parsed.payload === "object"
+      ? (parsed.payload as Record<string, unknown>)
+      : parsed.paymentPayload && typeof parsed.paymentPayload === "object"
+        ? (parsed.paymentPayload as Record<string, unknown>)
+        : parsed;
+  const authorization =
+    payload.authorization && typeof payload.authorization === "object"
+      ? (payload.authorization as Record<string, unknown>)
+      : undefined;
+  const candidate =
+    readString(authorization ?? {}, "from") ??
+    readString(authorization ?? {}, "payer") ??
+    readString(payload, "from");
+  return candidate?.toLowerCase();
+}
+
 function maskAddress(value: string | undefined): string | undefined {
   if (!value || value.length < 10) return value;
   return `${value.slice(0, 8)}...${value.slice(-6)}`;
@@ -444,7 +464,54 @@ export async function requireX402PaymentForResource(
   const paymentUsd = resource.costUsd ?? parsePaymentUsd(request);
   const paymentAmountAtomic = toAtomicAmount(paymentUsd, deps.paymentAssetDecimals);
   const pair = ((request.query as { pair?: string } | undefined)?.pair ?? "").toUpperCase() || resource.resourcePath;
+  const authClaims =
+    (request as { sessionClaims?: { ownerAddress?: string; agentId?: string } }).sessionClaims;
+  const currentAgent = await deps.store.getAgent(agentId);
+  if (!currentAgent) {
+    reply.status(404).send({ code: "AGENT_NOT_FOUND", message: "Agent not found" });
+    return false;
+  }
+  const configuredOwnerAddress = (() => {
+    const identity =
+      currentAgent.strategyConfig?.identity &&
+      typeof currentAgent.strategyConfig.identity === "object"
+        ? (currentAgent.strategyConfig.identity as Record<string, unknown>)
+        : undefined;
+    const candidate = identity?.ownerAddress;
+    return typeof candidate === "string" ? candidate.toLowerCase() : undefined;
+  })();
+  if (
+    configuredOwnerAddress &&
+    authClaims?.ownerAddress &&
+    authClaims.ownerAddress.toLowerCase() !== configuredOwnerAddress
+  ) {
+    reply.status(403).send({
+      code: "OWNER_MISMATCH",
+      message: "Session owner does not match agent owner"
+    });
+    return false;
+  }
   const payment = request.headers["x-payment"];
+  if (typeof payment === "string" && payment.length > 0) {
+    const linkedPayer = (() => {
+      const identity =
+        currentAgent.strategyConfig?.identity &&
+        typeof currentAgent.strategyConfig.identity === "object"
+          ? (currentAgent.strategyConfig.identity as Record<string, unknown>)
+          : undefined;
+      const candidate = identity?.linkedPayerAddress;
+      return typeof candidate === "string" ? candidate.toLowerCase() : undefined;
+    })();
+    const payer = extractPayerAddress(payment);
+    if (linkedPayer && payer && payer !== linkedPayer) {
+      reply.status(403).send({
+        code: "PAYER_MISMATCH",
+        message: "x-payment payer does not match linked payer identity",
+        details: { expected: linkedPayer, got: payer }
+      });
+      return false;
+    }
+  }
   if (typeof payment !== "string" || payment.length === 0) {
     const created = await deps.store.createPayment({
       agentId,
@@ -664,7 +731,54 @@ export async function requireX402Payment(
   const paymentUsd = parsePaymentUsd(request);
   const paymentAmountAtomic = toAtomicAmount(paymentUsd, deps.paymentAssetDecimals);
   const pair = ((request.query as { pair?: string } | undefined)?.pair ?? "ETH/USDT").toUpperCase();
+  const authClaims =
+    (request as { sessionClaims?: { ownerAddress?: string; agentId?: string } }).sessionClaims;
+  const currentAgent = await deps.store.getAgent(agentId);
+  if (!currentAgent) {
+    reply.status(404).send({ code: "AGENT_NOT_FOUND", message: "Agent not found" });
+    return false;
+  }
+  const configuredOwnerAddress = (() => {
+    const identity =
+      currentAgent.strategyConfig?.identity &&
+      typeof currentAgent.strategyConfig.identity === "object"
+        ? (currentAgent.strategyConfig.identity as Record<string, unknown>)
+        : undefined;
+    const candidate = identity?.ownerAddress;
+    return typeof candidate === "string" ? candidate.toLowerCase() : undefined;
+  })();
+  if (
+    configuredOwnerAddress &&
+    authClaims?.ownerAddress &&
+    authClaims.ownerAddress.toLowerCase() !== configuredOwnerAddress
+  ) {
+    reply.status(403).send({
+      code: "OWNER_MISMATCH",
+      message: "Session owner does not match agent owner"
+    });
+    return false;
+  }
   const payment = request.headers["x-payment"];
+  if (typeof payment === "string" && payment.length > 0) {
+    const linkedPayer = (() => {
+      const identity =
+        currentAgent.strategyConfig?.identity &&
+        typeof currentAgent.strategyConfig.identity === "object"
+          ? (currentAgent.strategyConfig.identity as Record<string, unknown>)
+          : undefined;
+      const candidate = identity?.linkedPayerAddress;
+      return typeof candidate === "string" ? candidate.toLowerCase() : undefined;
+    })();
+    const payer = extractPayerAddress(payment);
+    if (linkedPayer && payer && payer !== linkedPayer) {
+      reply.status(403).send({
+        code: "PAYER_MISMATCH",
+        message: "x-payment payer does not match linked payer identity",
+        details: { expected: linkedPayer, got: payer }
+      });
+      return false;
+    }
+  }
   if (typeof payment !== "string" || payment.length === 0) {
     const created = await deps.store.createPayment({
       agentId,

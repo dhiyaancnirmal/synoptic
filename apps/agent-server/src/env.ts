@@ -20,15 +20,28 @@ export interface AgentServerEnv {
   kiteRpcUrl: string;
   uniswapApiKey: string;
   registryAddress: string;
+  paymentMode: "facilitator" | "demo";
   facilitatorMode: "real" | "demo";
+  x402Scheme: "gokite-aa";
+  x402Version: 1;
   quicknodeSecurityToken: string;
   monadUsdcAddress: string;
   monadUsdtAddress: string;
+  authRefreshTtlSeconds: number;
+  allowServerSigning: boolean;
 }
 
 function readNumber(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function readBoolean(value: string | undefined, fallback = false): boolean {
+  if (!value) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
 }
 
 export function loadEnv(): AgentServerEnv {
@@ -41,6 +54,30 @@ export function loadEnv(): AgentServerEnv {
     process.env.EXECUTION_CHAIN_ID ?? process.env.MONAD_CHAIN_ID,
     10143
   );
+
+  const paymentModeEnv = process.env.KITE_PAYMENT_MODE?.trim().toLowerCase();
+  const legacyFacilitatorMode = process.env.FACILITATOR_MODE?.trim().toLowerCase();
+  const paymentMode = (() => {
+    if (paymentModeEnv === "facilitator" || paymentModeEnv === "demo") {
+      return paymentModeEnv;
+    }
+    if (paymentModeEnv && paymentModeEnv.length > 0) {
+      throw new Error(
+        `Invalid KITE_PAYMENT_MODE="${process.env.KITE_PAYMENT_MODE}". Expected "facilitator" or "demo".`
+      );
+    }
+    if (legacyFacilitatorMode === "demo") {
+      // eslint-disable-next-line no-console
+      console.warn("[env] FACILITATOR_MODE is deprecated. Use KITE_PAYMENT_MODE.");
+      return "demo";
+    }
+    if (legacyFacilitatorMode === "real") {
+      // eslint-disable-next-line no-console
+      console.warn("[env] FACILITATOR_MODE is deprecated. Use KITE_PAYMENT_MODE.");
+      return "facilitator";
+    }
+    return "facilitator";
+  })();
 
   return {
     port: readNumber(process.env.PORT, 3001),
@@ -61,12 +98,12 @@ export function loadEnv(): AgentServerEnv {
       process.env.KITE_TEST_USDT_ADDRESS ?? "0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63",
     kitePaymentAssetDecimals: readNumber(
       process.env.KITE_PAYMENT_ASSET_DECIMALS ?? process.env.KITE_TEST_USDT_DECIMALS,
-      6
+      18
     ),
     kiteServicePayTo:
       process.env.KITE_SERVICE_PAYTO ??
       process.env.KITE_FACILITATOR_ADDRESS ??
-      "0x12343e649e6b2b2b77649DFAb88f103c02F3C78b",
+      "0x66ad7ef70cc88e37fa692d85c8a55ed4c1493251",
     agentPrivateKey: process.env.AGENT_PRIVATE_KEY ?? "",
     executionChainId,
     executionRpcUrl,
@@ -81,10 +118,10 @@ export function loadEnv(): AgentServerEnv {
     uniswapApiKey: process.env.UNISWAP_API_KEY ?? "",
     registryAddress:
       process.env.SERVICE_REGISTRY_ADDRESS ?? process.env.TRADE_REGISTRY_ADDRESS ?? "",
-    facilitatorMode:
-      (process.env.FACILITATOR_MODE === "demo" || !process.env.KITE_FACILITATOR_URL)
-        ? "demo"
-        : "real",
+    paymentMode,
+    facilitatorMode: paymentMode === "demo" ? "demo" : "real",
+    x402Scheme: "gokite-aa",
+    x402Version: 1,
     quicknodeSecurityToken:
       process.env.QUICKNODE_SECURITY_TOKEN ??
       process.env.QUICKNODE_STREAM_SECURITY_TOKEN ??
@@ -92,6 +129,8 @@ export function loadEnv(): AgentServerEnv {
       "",
     monadUsdcAddress:
       process.env.MONAD_USDC_ADDRESS ?? "0x62534e4bbd6d9ebac0ac99aeaa0aa48e56372df0",
-    monadUsdtAddress: process.env.MONAD_USDT_ADDRESS ?? ""
+    monadUsdtAddress: process.env.MONAD_USDT_ADDRESS ?? "",
+    authRefreshTtlSeconds: readNumber(process.env.AUTH_REFRESH_TTL_SECONDS, 7 * 24 * 60 * 60),
+    allowServerSigning: readBoolean(process.env.ALLOW_SERVER_SIGNING, false)
   };
 }
