@@ -38,7 +38,7 @@ export default async function HomePage() {
               observe real-time event streams from a unified workspace.
             </p>
             <div className="hero-actions">
-              <Link href="/agents" className="action-primary">
+              <Link href="/overview" className="action-primary">
                 Open Workspace
               </Link>
               <a href="#capabilities" className="action-secondary">
@@ -219,7 +219,7 @@ export default async function HomePage() {
               bootstrap available at <code>/login</code>.
             </p>
             <div className="footer-actions">
-              <Link href="/agents" className="action-primary">
+              <Link href="/overview" className="action-primary">
                 Open Workspace
               </Link>
               <Link href="/login" className="action-secondary">
@@ -229,20 +229,20 @@ export default async function HomePage() {
           </div>
           <div className="footer-routes">
             <div className="route-link">
-              <span className="pixel-text">/agents</span>
-              <span>Agent lifecycle</span>
+              <span className="pixel-text">/overview</span>
+              <span>Identity + readiness</span>
             </div>
             <div className="route-link">
-              <span className="pixel-text">/payments</span>
-              <span>x402 flows</span>
+              <span className="pixel-text">/execute</span>
+              <span>Paid action execution</span>
             </div>
             <div className="route-link">
-              <span className="pixel-text">/trading</span>
-              <span>Spot execution</span>
+              <span className="pixel-text">/evidence</span>
+              <span>Payment + chain proofs</span>
             </div>
             <div className="route-link">
-              <span className="pixel-text">/activity</span>
-              <span>Event stream</span>
+              <span className="pixel-text">/login</span>
+              <span>Session bootstrap</span>
             </div>
           </div>
         </div>

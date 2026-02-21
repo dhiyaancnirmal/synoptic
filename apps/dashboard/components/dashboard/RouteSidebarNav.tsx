@@ -4,13 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const links = [
-  { href: "/cockpit", label: "Overview" },
-  { href: "/agents", label: "Agents" },
-  { href: "/trading", label: "Spot Trading" },
-  { href: "/payments", label: "Payments" },
-  { href: "/streams", label: "Streams" },
-  { href: "/marketplace", label: "Marketplace" },
-  { href: "/activity", label: "Activity" },
+  { href: "/overview", label: "Overview" },
+  { href: "/execute", label: "Execute" },
+  { href: "/evidence", label: "Evidence" }
 ];
 
 interface RouteSidebarNavProps {

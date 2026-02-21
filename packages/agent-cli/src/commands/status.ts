@@ -4,6 +4,7 @@ import { JsonRpcProvider, formatEther } from "ethers";
 import { loadWallet, getWalletPath, getLogsDir } from "../wallet.js";
 import { resolveConfig } from "../config.js";
 import { createApiClient } from "../api-client.js";
+import { loadSession } from "../session.js";
 import { printHeader, printError, formatAddress } from "../utils/formatting.js";
 
 export async function statusCommand(): Promise<void> {
@@ -58,12 +59,47 @@ export async function statusCommand(): Promise<void> {
 
   const healthSpinner = ora("Checking API health...").start();
   try {
-    const health = await apiClient.getHealth();
+    const health = await apiClient.getHealth() as {
+      status: string;
+      service: string;
+      timestamp: string;
+      dependencies: Record<string, string>;
+      payment?: {
+        mode: string;
+        verifyReachable: string;
+        settleReachable: string;
+        lastCheckedAt?: string;
+      };
+    };
     healthSpinner.succeed(`  Status: ${chalk.green(health.status)}`);
     console.log(`  ${chalk.dim("Service:")} ${health.service}`);
     console.log(`  ${chalk.dim("URL:")} ${config.apiUrl}`);
+    if (health.payment) {
+      console.log(
+        `  ${chalk.dim("Payment:")} ${health.payment.mode} | verify=${health.payment.verifyReachable} settle=${health.payment.settleReachable}`
+      );
+    }
   } catch {
     healthSpinner.fail("  API: Unable to connect");
+  }
+
+  console.log("");
+  const session = loadSession();
+  if (session) {
+    console.log(chalk.bold("  Setup Readiness:"));
+    console.log("");
+    console.log(`  ${chalk.dim("Agent:")} ${session.agentId}`);
+    console.log(`  ${chalk.dim("Owner:")} ${formatAddress(session.ownerAddress)}`);
+    console.log(
+      `  ${chalk.dim("Identity:")} ${session.linkedPayerAddress ? chalk.green("linked") : chalk.yellow("warning")}`
+    );
+    if (session.linkedPayerAddress) {
+      console.log(`  ${chalk.dim("Payer:")} ${formatAddress(session.linkedPayerAddress)}`);
+    }
+    if (session.readiness?.lastError) {
+      console.log(`  ${chalk.dim("Last warning:")} ${session.readiness.lastError}`);
+    }
+    console.log("");
   }
 
   console.log("");

@@ -1,5 +1,5 @@
-import { AgentsRouteClient } from "@/components/dashboard/routes/AgentsRouteClient";
+import { redirect } from "next/navigation";
 
 export default function AgentsPage() {
-  return <AgentsRouteClient />;
+  redirect("/overview");
 }
