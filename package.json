@@ -4,10 +4,10 @@
   "private": true,
   "packageManager": "pnpm@9.15.4",
   "engines": {
-    "node": ">=22.22.0 <23.0.0"
+    "node": ">=22.0.0 <23.0.0"
   },
   "volta": {
-    "node": "22.22.0",
+    "node": "22.x",
     "pnpm": "9.15.4"
   },
   "scripts": {
